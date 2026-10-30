@@ -1,0 +1,19 @@
+# One node, two DDP processes; every process holds a full model replica.
+# Global batch = per-device batch x accumulation x 2 = 1,024 examples.
+description: Two B200 GPUs with one CPU core and two data-loader workers per rank. Initial batch sizes require a GPU pilot.
+world_size: 2
+per_device_train_batch_size:
+  akant5-small: 64
+  akant5-base: 32
+  akant5-large: 8
+gradient_accumulation_steps:
+  akant5-small: 8
+  akant5-base: 16
+  akant5-large: 64
+gradient_checkpointing:
+  akant5-small: false
+  akant5-base: false
+  akant5-large: true
+bf16: true
+dataloader_num_workers: 2
+ignore_data_skip: false

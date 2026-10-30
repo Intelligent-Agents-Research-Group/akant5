@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "akant5"
+version = "0.1.0"
+description = "AkanT5: adapting mT5 to Akan by vocabulary replacement or extension and continued pretraining"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.11.0",
+    "transformers>=5.16.1",
+    "datasets>=3.0.0",
+    "accelerate>=1.0.0",
+    "sentencepiece>=0.2.1",
+    "tokenizers>=0.20.0",
+    "huggingface-hub>=0.26.0",
+    "sacrebleu>=2.4.0",
+    "typer>=0.12.0",
+    "pydantic>=2.0",
+    "pyyaml",
+    "pandas",
+    "pyarrow",
+    "numpy",
+    "python-slugify",
+    "tqdm",
+    "protobuf>=7.36.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "black", "ruff"]
+
+[project.scripts]
+akanlm = "akanlm.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/e2e"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.uv]
+required-environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]

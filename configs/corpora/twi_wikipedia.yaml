@@ -1,0 +1,38 @@
+name: twi_wikipedia
+hf_id: wikimedia/wikipedia
+hf_config: 20231101.tw
+hf_revision: b04c8d1ceb2f5cd4588862100d08de323dccfbaa
+hf_split: train
+
+modality: monolingual
+text_column: text
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-sa-3.0
+licence_url: https://huggingface.co/datasets/wikimedia/wikipedia
+commercial_use: true
+
+role: train
+
+expected_rows: null
+notes: >-
+  Twi Wikipedia: 3,978 articles / 7,116,629 normalized characters in the local
+  audit. Included once per mixture pass; its earlier 4x weighting was a
+  heuristic with no controlled ablation demonstrating benefit. Human provenance
+  is not a guarantee of linguistic quality. See docs/CPT_REFERENCE_PROTOCOL.md.
+
+  Paired CPT experiments reserve 10% validation and 10% test articles before
+  tokenization and packing; see docs/CPT_REFERENCE_PROTOCOL.md.
+
+  There is no Akan Wikipedia (`.ak`) config in this dump — the ak edition has
+  under 600 articles and has been proposed for closure. `20231101.tw` is the
+  only Wikipedia option.
+
+  Dialect is unlabelled and mixed across contributors; variety_audited stays
+  false until a documented audit says otherwise. Contributor text can overlap
+  Wikinews/Wikivoyage, which is where FLORES+ sentences come from, so the
+  13-gram decontamination pass matters here specifically.

@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this code or the AkanT5 models, please cite them as below."
+type: software
+title: "AkanT5: Adapting mT5 to Akan by Vocabulary Replacement or Extension and Continued Pretraining"
+version: 0.1.0
+license: Apache-2.0
+repository-code: "https://github.com/Intelligent-Agents-Research-Group/akant5"
+url: "https://huggingface.co/IARG-UF"
+keywords:
+  - Akan
+  - Twi
+  - mT5
+  - vocabulary adaptation
+  - continued pretraining
+  - machine translation
+authors:
+  - family-names: Yamoah
+    given-names: Kweku
+    email: kyamoah@ufl.edu
+    affiliation: University of Florida
+    orcid: "https://orcid.org/0009-0009-1954-0078"
+  - family-names: Scroggins
+    given-names: Kevin
+    affiliation: University of Florida
+    orcid: "https://orcid.org/0009-0002-4025-2467"
+  - family-names: Okocha
+    given-names: Chibuzor
+    affiliation: University of Florida
+    orcid: "https://orcid.org/0009-0008-5411-160X"
+  - family-names: Grant
+    given-names: Christan
+    affiliation: University of Florida
+    orcid: "https://orcid.org/0000-0002-6684-3620"
+  - family-names: Dorley
+    given-names: Emmanuel
+    affiliation: University of Florida
+    orcid: "https://orcid.org/0000-0002-8624-7295"
+# Add the paper as preferred-citation once it is published.

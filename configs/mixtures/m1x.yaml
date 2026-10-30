@@ -1,0 +1,39 @@
+name: m1x
+description: >-
+  M1 expanded with GHOK, agricultural speech, broadcast transcripts, film
+  dialogue, and Akuapem/Asante scripture transcripts. All eight components
+  retain the recipe used in the successful 64k early-validation runs.
+
+  Released for the requested full run using the pinned-source audit at
+  runs/pilot/early-validation-small-m1-m1x/prerequisites/m1x_audit.json.
+  Full normalized GHOK/Pristine exact intersection: zero. After global exact
+  deduplication and downstream-overlap removal, the audit contains 1,535,062
+  unique documents and 3,313,945,522 characters, before CPT holdouts.
+  Training preparation must reapply exact deduplication, protected downstream
+  text exclusion, and the full mixture's document-level validation/test split.
+
+  See docs/CPT_REFERENCE_PROTOCOL.md for the audit identity and release record. Source
+  provenance and variety declarations retain their existing qualifications;
+  the computational audit does not establish authorship or linguistic quality.
+  Akuapem and Asante downstream results remain separate.
+seed: 13
+components:
+  - source: pristine_twi_english
+    repeat: 1.0
+    as_pairs: false
+  - source: ghok_parallel_en_twi
+    repeat: 1.0
+    as_pairs: false
+  - source: ghana_farmer_qa_twi
+    repeat: 1.0
+  - source: true_asr_ipa_twi
+    repeat: 1.0
+  - source: kumawood_twi
+    repeat: 1.0
+  - source: twi_wikipedia
+    repeat: 1.0
+  - source: ghana_speech_akuapem
+    repeat: 1.0
+  - source: ghana_speech_asante
+    repeat: 1.0
+blocked_on: null

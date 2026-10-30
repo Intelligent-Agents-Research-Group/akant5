@@ -1,0 +1,37 @@
+name: english_replay_mc4
+hf_id: allenai/c4
+hf_config: en-multi
+hf_revision: 1588ec454efa1a09f29cd18ddd04fe05fc8653a2
+hf_split: train
+# The en-multi config's first train shard: 273,356 documents, 909,142,550 raw characters.
+hf_files: [multilingual/c4-en.tfrecord-00000-of-11264.json.gz]
+hf_columns: [text, url, timestamp]
+
+modality: monolingual
+text_column: text
+
+language: en
+claimed_variety: null
+variety_audited: true
+
+provenance: human
+licence: odc-by
+licence_url: https://huggingface.co/datasets/allenai/c4
+commercial_use: true
+
+role: train
+
+expected_rows: null
+notes: >-
+  The English portion of mC4 (allenai/c4, config `en-multi`, files
+  `multilingual/c4-en.*.json.gz`), which is the English that mT5 was pretrained
+  on. The `en` config is the original English C4 used for T5 and was extracted
+  and filtered differently; `en.noclean` and `en.noblocklist` are not mC4 either.
+
+  Tokenizer training draws its English from this source at english_ratio 0.0567,
+  mT5's English share under alpha=0.3 sampling (configs/tokenizer).
+
+  EXTRACTED, NOT STREAMED. akanlm.corpora.extract reads the first train shard
+  until 83,109,901 normalized characters are reached and stores that prefix with
+  its hash; tokenizer training, the audit and the CPT split read the local copy.
+  Shard 0 of 11,264 is a fixed slice of the English portion, not a random sample.

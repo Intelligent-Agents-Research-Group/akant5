@@ -1,0 +1,22 @@
+# One node, four DDP processes; every process holds a full model replica.
+# Global batch = per-device batch x accumulation x 4 = 1,024 examples, as in b200_2gpu.
+# Microbatches and activation checkpointing equal b200_2gpu, so per-GPU memory matches
+# the measured two-GPU runs; only accumulation is halved. The launcher requests two
+# CPU cores per rank, shared by the rank and its loaders.
+description: Four B200 GPUs with two CPU cores and two data-loader workers per rank. Same per-GPU microbatches as b200_2gpu.
+world_size: 4
+per_device_train_batch_size:
+  akant5-small: 64
+  akant5-base: 32
+  akant5-large: 8
+gradient_accumulation_steps:
+  akant5-small: 4
+  akant5-base: 8
+  akant5-large: 32
+gradient_checkpointing:
+  akant5-small: false
+  akant5-base: false
+  akant5-large: true
+bf16: true
+dataloader_num_workers: 2
+ignore_data_skip: false

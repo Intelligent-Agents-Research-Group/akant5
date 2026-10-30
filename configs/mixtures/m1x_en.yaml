@@ -1,0 +1,43 @@
+name: m1x_en
+description: >-
+  All eight M1x Akan sources plus mC4 English replay for span-corruption CPT.
+  English targets 20% of normalized training characters after downstream
+  exclusion, CPT holdout filtering and global exact deduplication. Retain the
+  final English document whole and report the realized share and overshoot.
+  This is a provisional retention-control setting, not a validated optimum.
+
+  The English component cap bounds the candidate extraction, not the final
+  training share. Its separate source identity preserves historical mC4
+  extractions. Preparation fails if the retained English pool cannot meet the
+  replay budget. All nine sources receive document-level CPT holdouts.
+  Use a fresh initialization and a maximum of 50,000 optimizer updates for
+  the main study. See docs/M1X_ENGLISH_REPLAY.md for preparation and launch.
+seed: 13
+replay:
+  source: english_replay_mc4_expanded
+  training_char_fraction: 0.20
+components:
+  - source: pristine_twi_english
+    repeat: 1.0
+    as_pairs: false
+  - source: ghok_parallel_en_twi
+    repeat: 1.0
+    as_pairs: false
+  - source: ghana_farmer_qa_twi
+    repeat: 1.0
+  - source: true_asr_ipa_twi
+    repeat: 1.0
+  - source: kumawood_twi
+    repeat: 1.0
+  - source: twi_wikipedia
+    repeat: 1.0
+  - source: ghana_speech_akuapem
+    repeat: 1.0
+  - source: ghana_speech_asante
+    repeat: 1.0
+  - source: english_replay_mc4_expanded
+    repeat: 1.0
+    # Candidate pool before filtering/splitting; replay resolves the train cap.
+    limit_chars: 1600000000
+    streaming: false
+blocked_on: null

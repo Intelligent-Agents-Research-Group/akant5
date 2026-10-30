@@ -1,0 +1,38 @@
+name: ghananlp_professional
+hf_id: Ghana-NLP/ENGLISH_TWI_PARALLEL_TEXT
+hf_revision: 5f59d16167c9432a6fa0dac5e7e6a7e48e161bdb
+hf_split: train
+
+modality: parallel
+# Counter-intuitive column names, verified against the data: `text` holds the
+# ENGLISH sentence and `label` holds the Twi. text_column is the Akan side.
+text_column: label
+source_column: text
+
+language: ak
+claimed_variety: akuapem+asante
+variety_audited: false
+
+provenance: human
+licence: cc-by-4.0
+licence_url: https://huggingface.co/datasets/Ghana-NLP/ENGLISH_TWI_PARALLEL_TEXT
+commercial_use: true
+
+role: eval_only
+
+expected_rows: 6090
+notes: >-
+  6,090 rows, scraped from Ghanaian domestic sources, Wikipedia, novels and
+  Bolingo, then translated by paid professional translators reading whole
+  sentences for context. The card names Akuapem Twi, Asante Twi and other Akan
+  variations without labelling rows individually, so claimed_variety records
+  both and variety_audited stays false: a per-row variety audit is required
+  before any result is attributed to the Akuapem primary condition.
+
+  LICENCE CAVEAT: the card states CC BY 4.0 for the Twi-to-English files and
+  gives a non-standard URL for the English-to-Twi direction. Treat the reverse
+  direction as unlicensed until clarified.
+
+  Held out entirely. This is the second human-authored evaluation set beside
+  FLORES+, and being non-Wikinews-derived it is the check on whether gains
+  transfer off the FLORES source domain.

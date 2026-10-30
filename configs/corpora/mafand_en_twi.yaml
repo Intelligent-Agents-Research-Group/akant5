@@ -1,0 +1,38 @@
+name: mafand_en_twi
+hf_id: masakhane/mafand
+hf_config: en-twi
+hf_revision: b215cd3c701dd16e447a0a2132fb73181acd6c53
+# Commit on refs/convert/parquet, where this script-based dataset is actually
+# read from. That branch is mutable, so it is pinned by SHA rather than by name.
+hf_parquet_revision: ad2a4dff951cce6d7fd93566ecc527735ec1f68b
+hf_split: test
+
+modality: parallel
+text_column: twi
+source_column: en
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/masakhane/mafand
+commercial_use: false
+
+role: eval_only
+
+expected_rows: 1500
+notes: >-
+  Human-translated news, 3337 train / 1284 validation / 1500 test. The train
+  and validation splits are used to fine-tune the MT probe in eval/mt_probe.py;
+  they are task-tuning data, not pretraining data, and this source is marked
+  eval_only so no mixture can pull it in.
+
+  LOADING: masakhane/mafand is a script-based dataset and the repo contains only
+  mafand.py. `datasets` no longer executes loading scripts, so it must be read
+  from the auto-converted parquet branch:
+    revision="refs/convert/parquet", path "en-twi/{train,validation,test}/*.parquet"
+  akanlm.corpora.loaders handles this; see _load_mafand().
+
+  Rows are {"translation": {"en": ..., "twi": ...}}.

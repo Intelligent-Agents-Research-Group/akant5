@@ -1,0 +1,51 @@
+name: ghana_speech_asante
+hf_id: ghanaopenai/ghana-speech
+hf_config: Asante_Twi_twi
+hf_revision: 884f35c11eef4f1f6d4b472528125f9d1b6319a9
+hf_split: train
+hf_files: [Asante_Twi_twi/train-*.parquet]
+hf_columns: [id, language, text, source_file]
+group_by: source_file
+order_by: id
+
+modality: monolingual
+text_column: text
+
+language: ak-asante
+claimed_variety: asante
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghanaopenai/ghana-speech
+commercial_use: false
+
+role: train
+# No strip_speaker_labels: verse text such as "Yafet mma ne: Gomer, Magog, ..."
+# matches its `Name:` pattern (7,628 of 143,383 rows).
+normalization_rules: [strip_control, strip_zero_width, nfc, confusables, spaces, dashes, quotes, collapse_whitespace]
+
+expected_rows: 143383
+notes: >-
+  Asante half of ghana-speech's Akan configs: 143,383 rows; `text` measures
+  8,992,479 characters but only 5,948,509 over unique rows
+  (the card-statistics estimate was 11,454,868).
+
+  BIBLE READING WITH REPEATED CHAPTERS. `source_file` is chapter plus recording
+  (`1CH.1.1461`, `1CH.1.1861`, `1CH.1.2094`). In the first 11,472 rows,
+  recordings 1461 and 1861 read the same translation with identical
+  transcripts, and 2094 reads a different translation ("Ɛfiri Adam So Kɔsi Noa
+  Mma So" against "Ɛfiri Adam so de kɔsi Abraham so"). Documents are rebuilt
+  per recording (group_by source_file, order_by id); the mixture's exact
+  duplicate rule then keeps one of each identical reading — 211 distinct
+  documents of 278 in that sample. Readings that differ only in segmentation
+  remain near-duplicates.
+
+  In m1x for volume. The no-pooling rule governs evaluation and
+  variety-attributed claims, not what text enters the adaptation pool. Record in
+  the data statement that Asante is the majority of m1x's variety-labelled text.
+  FLORES+ Akuapem and Asante are still reported side by side.
+
+  Provenance, translation copyright and variety labelling are unverified for the
+  same reasons as the Akuapem config. 23.1 GB, almost all audio; extracted by
+  akanlm.corpora.extract.

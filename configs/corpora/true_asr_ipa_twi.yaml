@@ -1,0 +1,47 @@
+name: true_asr_ipa_twi
+hf_id: ghananlpcommunity/true-asr-ipa-pairs-twi
+hf_revision: c93adcc9bd2b18deac68131b2938b35ff66c541d
+hf_split: train
+
+modality: monolingual
+text_column: text
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghananlpcommunity/true-asr-ipa-pairs-twi
+commercial_use: false
+
+role: train
+normalization_rules: [strip_control, strip_zero_width, nfc, confusables, spaces, dashes, quotes, strip_speaker_labels, collapse_whitespace]
+
+expected_rows: 58431
+notes: >-
+  58,431 rows, `text` mean 400.85 characters (min 3, max 976), approximately
+  23,422,000 characters. Unusually long for a speech-derived source and 3.3x
+  Twi Wikipedia, and at 98.7 MB with no audio column it is cheap to read.
+
+  Only `text` is declared. `true_ipa` and `asr_ipa` are phonetic
+  transcriptions, not Twi orthography, and must never reach a mixture: they
+  would teach the model IPA as though it were Akan text and would corrupt the
+  tokenizer's open-vowel statistics, which are the whole point of the 32k
+  vocabulary.
+
+  The `true_ipa` / `asr_ipa` pairing does make this a natural diagnostic set
+  for grapheme-to-phoneme behaviour around the open vowels, separate from CPT.
+  ghanaopenai/twi-grapheme-unit-pairs (282k rows) and twi-grapheme-unit-features
+  are adjacent resources for the same question and are relevant to the
+  tokenizer work in §4, not to the mixture.
+
+  `provenance: human` is UNVERIFIED; "true" in the name refers to the reference
+  IPA rather than to a documented transcription route.
+
+  At the pinned revision: 54,508 distinct `text` values (21,904,483 characters
+  once each); the mixture's exact duplicate rule removes the rest. `id` values
+  such as `-3D0c-t-IWo_001` look like a video id plus segment number, and the
+  text is broadcast speech ("Adom TV"), so adjacent segments of one broadcast
+  can fall in different CPT splits. Rows are not regrouped because the id
+  format is undocumented.

@@ -1,0 +1,48 @@
+name: End-to-end tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: false
+      - name: Install locked dependencies
+        run: uv sync --frozen --extra dev
+      - name: Run offline CPU tests
+        run: >-
+          uv run --frozen --no-sync python -m pytest
+          --basetemp "$RUNNER_TEMP/akant5-tests"
+          --junitxml "$RUNNER_TEMP/akant5-junit.xml"
+      - name: Preserve verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu-test-artifacts
+          path: |
+            ${{ runner.temp }}/akant5-junit.xml
+            ${{ runner.temp }}/akant5-tests
+          if-no-files-found: warn
+          retention-days: 14

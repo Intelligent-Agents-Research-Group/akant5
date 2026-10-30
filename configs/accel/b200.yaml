@@ -1,0 +1,17 @@
+# 1x NVIDIA B200, 180 GB HBM3e.
+# Overrides merged onto configs/models/*.yaml by `akanlm cpt --accel b200`.
+description: Single B200, 180GB. Generous batches; checkpointing only for large.
+per_device_train_batch_size:
+  akant5-small: 64
+  akant5-base: 32
+  akant5-large: 8
+gradient_accumulation_steps:
+  akant5-small: 16
+  akant5-base: 32
+  akant5-large: 128
+gradient_checkpointing:
+  akant5-small: false
+  akant5-base: false
+  akant5-large: true
+bf16: true
+dataloader_num_workers: 4

@@ -1,0 +1,39 @@
+name: flores_plus_akuapem
+hf_id: openlanguagedata/flores_plus
+hf_config: twi_Latn_akua1239
+hf_revision: 5fec6c13f9e5a4db2f745d4ec0d7c9721ddc4f06
+hf_split: devtest
+
+modality: monolingual
+text_column: text
+
+language: ak-akuapem
+claimed_variety: akuapem
+variety_audited: true
+
+provenance: human
+licence: cc-by-sa-4.0
+licence_url: https://huggingface.co/datasets/openlanguagedata/flores_plus
+commercial_use: true
+
+role: eval_only
+
+expected_rows: 1012
+notes: >-
+  FLORES+ separates Twi by dialect, with distinct Glottocode-suffixed configs:
+  twi_Latn_akua1239 (Akuapem) and twi_Latn_asan1239 (Asante). The publication
+  plan assumes a single undifferentiated twi_Latn set; it is better than that.
+  Akuapem is the project's declared primary variety, so THIS is the primary
+  human-authored evaluation set and the Asante config is the cross-variety
+  transfer set — evaluated explicitly, never pooled.
+
+  Professional translation of English sentences sampled from Wikinews,
+  Wikijunior and Wikivoyage. That source domain is why every training corpus
+  must pass 13-gram decontamination against these sentences.
+
+  997 dev + 1012 devtest. dev is available for development decisions; devtest
+  is opened only after the mixture and checkpoint are frozen.
+
+  ACCESS: this dataset is GATED. Accept the terms on the Hub page and either
+  run `huggingface-cli login` or export HF_TOKEN. Compute nodes do not inherit
+  an interactive login, so HF_TOKEN must be set in the job environment.

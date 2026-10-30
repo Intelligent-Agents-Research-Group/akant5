@@ -1,0 +1,62 @@
+name: kumawood_twi
+hf_id: ghanaopenai/kumawood-speech-transcriptions
+hf_revision: 80dc82d4813e26eddb251ac83643c6e519fdb068
+hf_split: train
+hf_files: [data/train-*.parquet]
+hf_columns: [film, start, twi_text, text]
+group_by: film
+order_by: start
+
+modality: monolingual
+text_column: twi_text
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghanaopenai/kumawood-speech-transcriptions
+commercial_use: false
+
+role: train
+normalization_rules:
+  - strip_control
+  - strip_zero_width
+  - nfc
+  - confusables
+  - spaces
+  - dashes
+  - quotes
+  - strip_speaker_labels
+  - collapse_whitespace
+
+expected_rows: 173400
+notes: >-
+  Transcribed dialogue from Kumawood films. Only the train split is declared:
+  173,400 rows from 100 parquet shards, 1,178 films, 8,137,028 `twi_text`
+  characters. Small, and declared for REGISTER rather than volume.
+
+  THIS IS THE ONLY CONVERSATIONAL TWI IN THE INVENTORY. Every other trainable
+  source is news-prompt generation, encyclopedic prose, agricultural QA,
+  broadcast transcripts or scripture reading. The publication plan's pragmatic
+  graph is built on formality, audience size, age relation and speech act, and
+  RQ4/RQ6 ask the model to choose contextually appropriate realizations. Film
+  dialogue exhibits these; the rest of the CPT text does not.
+
+  DOCUMENTS ARE REBUILT PER FILM (group_by film, order_by start, one utterance
+  per line). A film has a median of 90.5 train utterances (1 to 2,782), so
+  documents span many 1024-token chunks and the CPT split holds out whole
+  films. Utterances assigned to the dataset's own validation/test splits are
+  absent, so dialogue has gaps; no scene boundaries are inferred.
+
+  `provenance: human` is UNVERIFIED — the card does not state whether
+  transcription was manual, ASR or model-assisted. `twi_words_per_sec` and
+  `duration` suggest alignment work but do not establish the route.
+
+  `text` is an English rendering of each utterance ("God forgive you." beside
+  "nyame nfa wo bɔne"). It is extracted for a possible paired declaration and is
+  not read by this monolingual one.
+
+  LOADING: 21.7 GB, almost all audio. akanlm.corpora.extract reads only the
+  declared columns by HTTP range request; training reads that local copy.

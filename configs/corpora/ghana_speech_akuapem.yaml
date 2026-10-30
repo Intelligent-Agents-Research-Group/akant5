@@ -1,0 +1,59 @@
+name: ghana_speech_akuapem
+hf_id: ghanaopenai/ghana-speech
+hf_config: Akuapem_Twi_twi
+hf_revision: 884f35c11eef4f1f6d4b472528125f9d1b6319a9
+hf_split: train
+hf_files: [Akuapem_Twi_twi/train-*.parquet]
+hf_columns: [id, language, text, source_file]
+group_by: source_file
+order_by: id
+
+modality: monolingual
+text_column: text
+
+language: ak-akuapem
+claimed_variety: akuapem
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghanaopenai/ghana-speech
+commercial_use: false
+
+role: train
+# No strip_speaker_labels: verse text such as "Gerson mmabarima ne: Libni ne
+# Simei." matches its `Name:` pattern (451 of 52,650 rows), and these
+# transcripts carry no speaker labels.
+normalization_rules:
+  - strip_control
+  - strip_zero_width
+  - nfc
+  - confusables
+  - spaces
+  - dashes
+  - quotes
+  - collapse_whitespace
+
+expected_rows: 52650
+notes: >-
+  The first variety-labelled Akuapem training text in this project. 52,650 rows;
+  `text` measures 2,949,425 characters (2,906,057 over unique rows) at the
+  pinned revision. The card-statistics estimate of 3,081,078
+  was high.
+
+  THIS IS BIBLE READING. `source_file` names a recording of one chapter
+  (`1CH.1.1631` is 1 Chronicles 1, recording 1631) and rows are verses in `id`
+  order; the first 10,530 rows use a single recording suffix. Documents are
+  therefore rebuilt per recording (group_by source_file, order_by id, one verse
+  per line), which gives chapter-length documents for packing and holds out
+  whole chapters in the CPT split. Register is scripture, not conversation.
+  Provenance is a published translation read aloud; the card does not name the
+  translation or its copyright holder, which the data statement must resolve.
+
+  `variety_audited: false` regardless. A config name is the publisher's claim,
+  not an audit. The `language` column (`Akuapem_Twi` in every row sampled)
+  permits a per-row consistency check against the config name.
+
+  LOADING: 7.3 GB of parquet, almost all audio. The declared columns are
+  extracted by akanlm.corpora.extract (HTTP range reads; audio is never
+  transferred) and training reads that local copy.

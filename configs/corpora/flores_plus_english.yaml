@@ -1,0 +1,36 @@
+name: flores_plus_english
+hf_id: openlanguagedata/flores_plus
+hf_config: eng_Latn
+hf_revision: 5fec6c13f9e5a4db2f745d4ec0d7c9721ddc4f06
+hf_split: devtest
+
+modality: monolingual
+text_column: text
+
+language: en
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-sa-4.0
+licence_url: https://huggingface.co/datasets/openlanguagedata/flores_plus
+commercial_use: true
+
+role: eval_only
+
+expected_rows: 1012
+notes: >-
+  The English side of FLORES+, and the only reason it is declared: the MT
+  probe translates en->twi, and the Akuapem and Asante configs are monolingual
+  Twi, so there is no source text without this.
+
+  ALIGNMENT: FLORES+ language configs are sentence-parallel by row, and the
+  shared `id` column makes that checkable rather than assumed. Verified at
+  this revision: eng_Latn and twi_Latn_akua1239 devtest agree on all 1012 ids
+  in order. akanlm.eval.mt_probe.load_flores_pairs re-checks the ids every
+  time rather than trusting the ordering, because an index-wise pairing that
+  has silently drifted still produces a perfectly plausible chrF++ score.
+
+  This is English, so it is never training data for a Twi model and never an
+  evaluation target on its own. role: eval_only keeps assert_trainable from
+  handing it to a mixture; it exists only to be the source column of a pair.

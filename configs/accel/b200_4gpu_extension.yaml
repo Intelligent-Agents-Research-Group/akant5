@@ -1,0 +1,14 @@
+# Large extension: retain the measured two-GPU microbatch and memory settings.
+# Global optimizer batch = 16 examples x 16 accumulation steps x 4 GPUs = 1,024.
+# Four-GPU throughput has not yet been measured.
+description: Four B200 GPUs for large vocabulary extension, using the pilot-verified per-GPU settings.
+world_size: 4
+per_device_train_batch_size:
+  akant5-large: 16
+gradient_accumulation_steps:
+  akant5-large: 16
+gradient_checkpointing:
+  akant5-large: false
+bf16: true
+dataloader_num_workers: 2
+ignore_data_skip: false

@@ -1,0 +1,43 @@
+name: akant5_spm_64k_train_v1
+vocab_size: 64000          # shared candidates for replacement and extension
+language_config: configs/languages/akan.json
+require_split_manifest: true
+
+model_type: unigram
+character_coverage: 1.0
+byte_fallback: true
+
+# Fit only the frozen CPT training partitions of the nine M1x+English sources.
+# Keep the historical tokenizer-fitting share fixed to isolate the split change.
+# This 5.67% fitting share is independent of the 20% CPT replay policy.
+twi_sources:
+  - pristine_twi_english
+  - ghok_parallel_en_twi
+  - ghana_farmer_qa_twi
+  - true_asr_ipa_twi
+  - kumawood_twi
+  - twi_wikipedia
+  - ghana_speech_akuapem
+  - ghana_speech_asante
+english_sources:
+  - english_replay_mc4_expanded
+english_ratio: 0.0567
+total_characters: 200000000  # 188.66M Twi + 11.34M English after filtering
+
+source_weights:
+  pristine_twi_english: 1375556554
+  ghok_parallel_en_twi: 1973383000
+  ghana_farmer_qa_twi: 34366000
+  true_asr_ipa_twi: 23422000
+  kumawood_twi: 9072000
+  twi_wikipedia: 7116629
+  ghana_speech_akuapem: 3081078
+  ghana_speech_asante: 11454868
+  english_replay_mc4_expanded: 1
+max_sentence_length: 8192
+split_digits: true
+allow_whitespace_only_pieces: false
+remove_extra_whitespaces: false
+train_extremely_large_corpus: false
+seed: 13
+num_threads: 1

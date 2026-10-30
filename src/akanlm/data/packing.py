@@ -1,0 +1,141 @@
+"""Tokenize and pack documents into fixed-length sequences.
+
+Span corruption wants dense, rectangular batches: every sequence exactly
+``tokens_length`` tokens, so the collator's deterministic length arithmetic
+holds. Documents are concatenated and cut into fixed-length chunks without
+document ``</s>`` separators, matching Google's preprocessing; the collator adds
+sequence-final EOS after corruption.
+
+Each chunk keeps the ``provenance`` of the document that contributed most of
+it, so a finished run can be re-analysed by human-vs-synthetic share without
+re-tokenizing the corpus.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Iterator
+
+from akanlm.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class PackedChunk:
+    """One fixed-length training sequence."""
+
+    input_ids: list[int]
+    provenance: str
+    source: str
+
+    def to_dict(self) -> dict:
+        return {
+            "input_ids": self.input_ids,
+            "provenance": self.provenance,
+            "source": self.source,
+        }
+
+
+@dataclass
+class PackingStats:
+    docs: int = 0
+    tokens: int = 0
+    chunks: int = 0
+    dropped_tail_tokens: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "docs": self.docs,
+            "tokens": self.tokens,
+            "chunks": self.chunks,
+            "dropped_tail_tokens": self.dropped_tail_tokens,
+            "tokens_per_doc": round(self.tokens / self.docs, 2) if self.docs else 0.0,
+        }
+
+
+def encode(tokenizer, text: str) -> list[int]:
+    """Token ids of one document, without special tokens.
+
+    Module-level so ``functools.partial(encode, tokenizer)`` can be pickled into
+    worker processes.
+    """
+    # Documents are split into tokens_length chunks by pack, so exceeding
+    # model_max_length here is expected; suppress that warning.
+    return tokenizer(text, add_special_tokens=False, verbose=False)["input_ids"]
+
+
+def pack(
+    documents: Iterable[tuple[str | list[int], str, str]],
+    tokenizer,
+    tokens_length: int,
+    stats: PackingStats | None = None,
+    append_eos: bool = True,
+) -> Iterator[PackedChunk]:
+    """Concatenate and chunk documents to exactly *tokens_length* tokens.
+
+    Args:
+        documents: ``(text, source_name, provenance)`` triples. ``text`` may
+            instead be the document's ids from :func:`encode` with *tokenizer*,
+            as :func:`~akanlm.data.mixture.iter_documents` yields when it
+            tokenizes in worker processes.
+        tokenizer: Tokenizer to encode with.
+        tokens_length: Raw length per chunk, from
+            :func:`~akanlm.data.collator.compute_input_and_target_lengths`.
+        stats: Optional accumulator.
+        append_eos: Insert ``</s>`` between documents. CPT keeps it off to match
+            Google's concatenation before corruption and sequence-final EOS.
+    Yields:
+        :class:`PackedChunk` of exactly *tokens_length* ids. The final partial
+        chunk is dropped so every batch stays rectangular; its size is recorded
+        in *stats*.
+    """
+    stats = stats if stats is not None else PackingStats()
+    eos = tokenizer.eos_token_id
+
+    buffer: list[int] = []
+    # Provenance/source of the tokens currently in the buffer, so a chunk can
+    # be attributed to whatever contributed most of it.
+    tags: list[tuple[str, str]] = []
+
+    for text, source, provenance in documents:
+        ids = encode(tokenizer, text) if isinstance(text, str) else list(text)
+        if not ids:
+            continue
+        if append_eos:
+            ids.append(eos)
+
+        buffer.extend(ids)
+        tags.extend([(source, provenance)] * len(ids))
+        stats.docs += 1
+        stats.tokens += len(ids)
+
+        while len(buffer) >= tokens_length:
+            chunk_ids = buffer[:tokens_length]
+            chunk_tags = tags[:tokens_length]
+            del buffer[:tokens_length]
+            del tags[:tokens_length]
+
+            source_name, provenance_name = _majority(chunk_tags)
+            stats.chunks += 1
+            yield PackedChunk(
+                input_ids=chunk_ids, provenance=provenance_name, source=source_name
+            )
+
+    stats.dropped_tail_tokens += len(buffer)
+    logger.info(
+        "packed %d docs -> %d chunks of %d tokens (%d tail tokens dropped)",
+        stats.docs,
+        stats.chunks,
+        tokens_length,
+        stats.dropped_tail_tokens,
+    )
+
+
+def _majority(tags: list[tuple[str, str]]) -> tuple[str, str]:
+    """Most common ``(source, provenance)`` pair in a chunk."""
+    from collections import Counter
+
+    if not tags:
+        return ("unknown", "unknown")
+    return Counter(tags).most_common(1)[0][0]

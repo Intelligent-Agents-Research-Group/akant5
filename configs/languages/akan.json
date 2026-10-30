@@ -1,0 +1,123 @@
+{
+  "language_name": "Akan",
+  "iso_639_3": "aka",
+  "iso_639_1": "ak",
+  "alternate_names": ["Twi", "Akan kasa", "Tshi", "Chwee"],
+  "family": "Niger-Congo > Atlantic-Congo > Kwa > Potou-Tano > Tano > Central Tano",
+  "region": "Ghana (Ashanti, Eastern, Central, Western, Bono regions), Côte d'Ivoire",
+  "script": "Latin",
+  "notes": "Akan alphabet: a b d e ɛ f g h i k l m n o ɔ p r s t u w y. Digraphs dw gy hw hy kw ky ny nw tw represent single phonemes. Akan is tonal (high/low) but standard modern orthography does NOT mark tone; tone marks appear in linguistic descriptions such as Christaller (1875). The letters c, j, q, v, x, z occur only in unassimilated loanwords and proper names.",
+
+  "primary_variety": "akuapem",
+  "varieties": {
+    "akuapem": {
+      "iso_639_3": "twi",
+      "bcp47": "ak-akuapem",
+      "notes": "Akuapem Twi. Primary experimental variety for this project; also the dialect basis of Christaller (1875) and the historical literary standard."
+    },
+    "asante": {
+      "iso_639_3": "twi",
+      "bcp47": "ak-asante",
+      "notes": "Asante Twi. Largest speaker population. Comparison/transfer evidence only — not pooled into the primary condition."
+    },
+    "fante": {
+      "iso_639_3": "fat",
+      "bcp47": "ak-fante",
+      "notes": "Fante. Separate written standard. Comparison/transfer evidence only."
+    }
+  },
+
+  "alphabet": [
+    "a", "b", "d", "e", "ɛ", "f", "g", "h", "i", "k",
+    "l", "m", "n", "o", "ɔ", "p", "r", "s", "t", "u",
+    "w", "y"
+  ],
+
+  "vowels": {
+    "oral": {
+      "base": ["a", "e", "ɛ", "i", "o", "ɔ", "u"],
+      "description": "7 oral vowels. Two ATR harmony sets: [+ATR] i e o u and [-ATR] ɪ ɛ ɔ ʊ, with a participating in both. Orthographically ɪ/ʊ are written i/u, so the surface inventory is 7 graphemes."
+    },
+    "nasal": {
+      "base": ["a", "e", "ɛ", "i", "o", "ɔ", "u"],
+      "description": "Akan has phonemic nasal vowels, but standard orthography does not mark them with a diacritic — nasality is inferred from context or an adjacent nasal consonant. No distinct grapheme set."
+    },
+    "with_tone": {
+      "high": ["á", "é", "ɛ́", "í", "ó", "ɔ́", "ú"],
+      "low": ["à", "è", "ɛ̀", "ì", "ò", "ɔ̀", "ù"],
+      "falling": ["â", "ê", "ɛ̂", "î", "ô", "ɔ̂", "û"],
+      "rising": ["ǎ", "ě", "ɛ̌", "ǐ", "ǒ", "ɔ̌", "ǔ"],
+      "description": "Tone diacritics are NOT part of standard modern Akan orthography. They appear in linguistic descriptions (Christaller 1875, modern academic transcription). Included so the tokenizer never falls back to bytes on grammar-book text."
+    }
+  },
+
+  "consonants": {
+    "plain": ["b", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "w", "y"],
+    "restricted": {
+      "l": "rare outside loanwords",
+      "r": "occurs mainly as an allophone of d and in loanwords"
+    },
+    "special": {},
+    "digraphs": {
+      "dw": "labialized voiced palatal/alveolar affricate",
+      "gy": "voiced palatal affricate (dʑ)",
+      "hw": "labialized voiceless glottal/palatal fricative (ɥ̊/ɕʷ)",
+      "hy": "voiceless palato-alveolar fricative (ɕ)",
+      "kw": "labialized voiceless velar stop (kʷ)",
+      "ky": "voiceless palatal affricate (tɕ)",
+      "ny": "palatal nasal (ɲ)",
+      "nw": "labialized velar nasal (ŋʷ)",
+      "tw": "labialized voiceless palatal affricate (tɕʷ)"
+    },
+    "description": "Nine digraphs represent single phonemes and must not be split by a subword tokenizer where avoidable. 'tw' in particular is the digraph in the language's own name (Twi)."
+  },
+
+  "tone_system": {
+    "type": "register",
+    "levels": ["high", "low"],
+    "contours": ["rising", "falling"],
+    "marked_in_standard_orthography": false,
+    "diacritics": {
+      "acute": "́",
+      "grave": "̀",
+      "circumflex": "̂",
+      "caron": "̌",
+      "macron": "̄"
+    },
+    "description": "Two level tones with downstep. Standard orthography leaves tone unwritten, which is a documented source of grammatical ambiguity — the grammar graph must carry tone distinctions the text does not."
+  },
+
+  "uppercase_forms": {
+    "Ɛ": "capital open-e",
+    "Ɔ": "capital open-o"
+  },
+
+  "morphological_markers": {
+    "subject_pronoun_prefixes": ["me", "wo", "ɔ", "o", "ɛ", "yɛ", "mo", "wɔ"],
+    "object_pronouns": ["me", "wo", "no", "yɛn", "mo", "wɔn"],
+    "possessive_prefixes": ["me", "wo", "ne", "yɛn", "mo", "wɔn"],
+    "negation": ["n", "m", "ɛn", "nn"],
+    "aspect_markers": ["re", "a", "be", "bɛ", "kɔ", "ko"],
+    "nominal_prefixes": ["a", "e", "ɛ", "o", "ɔ", "n", "m"],
+    "description": "Boundary-alignment probes for tokenizer evaluation. A Twi tokenizer that splits these off cleanly preserves the morphology the grammar graph indexes; one that buries them inside larger pieces does not."
+  },
+
+  "loanword_letters": {
+    "letters": ["c", "j", "q", "v", "x", "z"],
+    "description": "Not part of the Akan alphabet. Present in the corpus via proper names, English loans and code-switching, so they must remain encodable."
+  },
+
+  "all_special_characters": [
+    "ɛ", "ɔ",
+    "Ɛ", "Ɔ",
+    "á", "à", "â", "ǎ", "ā",
+    "é", "è", "ê", "ě", "ē",
+    "ɛ́", "ɛ̀", "ɛ̂", "ɛ̌",
+    "í", "ì", "î", "ǐ", "ī",
+    "ó", "ò", "ô", "ǒ", "ō",
+    "ɔ́", "ɔ̀", "ɔ̂", "ɔ̌",
+    "ú", "ù", "û", "ǔ", "ū",
+    "ń", "ǹ", "ḿ",
+    "́", "̀", "̂", "̌", "̄"
+  ]
+}

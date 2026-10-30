@@ -1,0 +1,42 @@
+name: akant5_spm_64k_chars_v3
+vocab_size: 64000          # + 100 sentinels = 64100; model vocab_size 64128
+language_config: configs/languages/akan.json
+
+model_type: unigram
+character_coverage: 1.0
+byte_fallback: true
+
+# The complete M1x Twi pool, weighted by measured one-pass normalized character
+# volume. English is mC4 `en-multi`, matching the source mT5 saw.
+twi_sources:
+  - pristine_twi_english
+  - ghok_parallel_en_twi
+  - ghana_farmer_qa_twi
+  - true_asr_ipa_twi
+  - kumawood_twi
+  - twi_wikipedia
+  - ghana_speech_akuapem
+  - ghana_speech_asante
+english_sources:
+  - english_replay_mc4
+english_ratio: 0.0567      # mT5 English share under alpha=0.3 sampling
+
+total_characters: 200000000  # 188.66M Twi + 11.34M English; no line cap
+
+source_weights:
+  pristine_twi_english: 1375556554
+  ghok_parallel_en_twi: 1973383000
+  ghana_farmer_qa_twi: 34366000
+  true_asr_ipa_twi: 23422000
+  kumawood_twi: 9072000
+  twi_wikipedia: 7116629
+  ghana_speech_akuapem: 3081078
+  ghana_speech_asante: 11454868
+  english_replay_mc4: 1
+max_sentence_length: 8192
+split_digits: true
+allow_whitespace_only_pieces: false
+remove_extra_whitespaces: false
+train_extremely_large_corpus: false
+seed: 13
+num_threads: 1             # deterministic SentencePiece training, as in the ratio experiment

@@ -1,0 +1,39 @@
+name: english_replay_mc4_expanded
+hf_id: allenai/c4
+hf_config: en-multi
+hf_revision: 1588ec454efa1a09f29cd18ddd04fe05fc8653a2
+hf_split: train
+hf_files:
+  - multilingual/c4-en.tfrecord-00000-of-11264.json.gz
+  - multilingual/c4-en.tfrecord-00001-of-11264.json.gz
+hf_columns: [text, url, timestamp]
+
+modality: monolingual
+text_column: text
+language: en
+claimed_variety: null
+variety_audited: true
+provenance: human
+licence: odc-by
+licence_url: https://huggingface.co/datasets/allenai/c4
+commercial_use: true
+role: train
+expected_rows: null
+notes: >-
+  Expanded candidate pool for M1x+English. This is mC4 English (en-multi),
+  the source family used in mT5 pretraining, not original C4 (en). The pinned
+  first two shards are consumed in declared order until the mixture's
+  1.6-billion normalized-character candidate cap is reached. Extraction
+  records the local table hash and URL-hostname distribution. This fixed
+  prefix is not a random sample of mC4 and requires its own quality audit;
+  the human provenance label does not establish authorship of every page.
+
+  A separate source name gives the expanded pool a separate extraction path.
+  The historical english_replay_mc4 declaration and local table stay intact.
+  The two source names overlap and must not both be added to one mixture.
+
+  The candidate cap is larger than the expected 20% training replay budget.
+  Actual English selection occurs after downstream exclusion, document-level
+  CPT splitting and exact deduplication. Preparation must fail if the clean
+  training pool is insufficient. The realized share is recorded separately
+  from extraction size, token counts, and tokenizer-fitting exposure.

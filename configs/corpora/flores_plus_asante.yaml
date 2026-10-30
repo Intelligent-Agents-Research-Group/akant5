@@ -1,0 +1,26 @@
+name: flores_plus_asante
+hf_id: openlanguagedata/flores_plus
+hf_config: twi_Latn_asan1239
+hf_revision: 5fec6c13f9e5a4db2f745d4ec0d7c9721ddc4f06
+hf_split: devtest
+
+modality: monolingual
+text_column: text
+
+language: ak-asante
+claimed_variety: asante
+variety_audited: true
+
+provenance: human
+licence: cc-by-sa-4.0
+licence_url: https://huggingface.co/datasets/openlanguagedata/flores_plus
+commercial_use: true
+
+role: eval_only
+
+expected_rows: 1012
+notes: >-
+  Asante Twi half of the FLORES+ dialect split. Cross-variety transfer
+  evaluation only. Results on this set are reported beside the Akuapem set and
+  never averaged with it — the publication plan forbids pooling varieties under
+  an undifferentiated Akan label.

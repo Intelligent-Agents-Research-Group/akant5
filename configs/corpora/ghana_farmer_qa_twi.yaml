@@ -1,0 +1,66 @@
+name: ghana_farmer_qa_twi
+hf_id: ghanaopenai/ghana-farmer-qa-twi
+hf_revision: 66fbd932df7b86a6b1c6aeab7f9fbd981010a0ed
+hf_split: train
+
+modality: monolingual
+text_column: original_twi
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: human
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghanaopenai/ghana-farmer-qa-twi
+commercial_use: false
+
+role: train
+normalization_rules:
+  - strip_control
+  - strip_zero_width
+  - nfc
+  - confusables
+  - spaces
+  - dashes
+  - quotes
+  - strip_markdown
+  - strip_speaker_labels
+  - collapse_whitespace
+
+expected_rows: 151427
+notes: >-
+  Agricultural extension QA for Ghanaian cocoa, cassava, maize, tomato,
+  pepper, rice, yam and plantain farming. 151,427 rows, no nulls in any string
+  column.
+
+  THIS DECLARATION TAKES `original_twi` ONLY, and the distinction matters. The
+  dataset carries three Akan columns with different origins: `original_twi`
+  (mean 226.95 chars, 34,366,000 total) sits beside a `file_name` column
+  referencing source audio, so it reads as transcribed speech from the farmer
+  interviews; `question_ak` (84.50 mean, 12,796,000) and `answer_ak` (213.97
+  mean, 32,401,000) pair one-to-one with the English `question`/`answer`
+  columns and so are almost certainly derived from them. Taking all three
+  would be 79,563,000 characters but would mix transcribed speech with
+  probable translations under a single provenance label.
+
+  `provenance: human` is therefore a claim about `original_twi` specifically
+  and is NOT yet verified. Confirm the transcription route with the community
+  before any result leans on it; if the transcripts are ASR or model-produced,
+  this becomes `synthetic` and the 34M characters stop being the project's
+  second-largest human-authored Twi source. If `question_ak`/`answer_ak` are
+  wanted later they need their own declaration with `machine_translated`, not
+  an extra column on this one.
+
+  EACH TRANSCRIPT REPEATS ACROSS ITS QA ROWS. At the pinned revision
+  `original_twi` has 15,085 distinct values over 151,427 rows (15,174 distinct
+  `file_name`s): 34,365,725 characters in total but 3,438,154 once each.
+  Every QA pair derived from one interview segment
+  carries that segment's transcript again. The mixture's exact duplicate rule
+  keeps the first row of each, so this source contributes about 3.4M
+  characters — half of Twi Wikipedia, not 4.8 times it. Register is spoken
+  agricultural advice, absent from the rest of the mixture, and the transcripts
+  code-switch ("cocoa nurse", "10 feet").
+
+  `source_text` (mean 288.85) is English and is not declared. Mirrored at
+  ghananlpcommunity/ghana-farmer-qa-twi; pin one.

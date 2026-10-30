@@ -1,0 +1,49 @@
+name: akant5-small
+base_checkpoint: runs/init/akant5-small-64k-chars-v3-sentinels-v1
+expected_tokenizer: runs/tokenizer/akant5_spm_64k_chars_v3
+mixture: m1x_en
+
+# Full M1x defaults selected after the 64k / 0.001 pilot.
+# Historical pilot defaults are stored with the completed pilot results.
+input_length: 1024
+target_length: 256
+noise_density: 0.15
+mean_noise_span_length: 3.0
+dropout_rate: 0.0
+append_document_eos: false
+
+learning_rate: 1.0e-3
+warmup_steps: 10000
+max_steps: 1000000
+lr_scheduler_type: rsqrt_no_ramp_down
+max_grad_norm: 0.0
+adafactor_scale_parameter: true
+adafactor_min_dim_size_to_factor: 128
+adafactor_decay_rate: -0.8
+adafactor_beta1: null
+adafactor_clip_threshold: 1.0
+adafactor_epsilon1: 1.0e-30
+adafactor_epsilon2: 1.0e-3
+z_loss: 1.0e-4
+loss_normalization: target_capacity
+
+per_device_train_batch_size: 32
+gradient_accumulation_steps: 32     # 1024 examples × 1024 encoder tokens
+per_device_eval_batch_size: 32
+gradient_checkpointing: false        # unnecessary at this size
+bf16: true
+dataloader_num_workers: 4
+
+logging_steps: 1000
+eval_steps: 1000
+save_steps: 1000
+save_total_limit: 3
+seed: 13
+
+ignore_data_skip: false
+validation_seed: 20260910
+early_stopping_patience: 10  # 10 validation checks without >0.001 improvement
+early_stopping_threshold: 0.001
+# Checkpoints kept past rotation: first save at/after warmup, doubling, plus
+# max_steps (10k, 20k, ..., 640k, 1M here). An explicit list also works.
+milestone_steps: doubling

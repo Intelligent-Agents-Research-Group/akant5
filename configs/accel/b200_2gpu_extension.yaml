@@ -1,0 +1,18 @@
+# Measured extension pilots; global optimizer batch = 1,024 examples.
+description: Two B200 GPUs, using batch sizes verified with the extended output vocabulary.
+world_size: 2
+per_device_train_batch_size:
+  akant5-small: 64
+  akant5-base: 32
+  akant5-large: 16
+gradient_accumulation_steps:
+  akant5-small: 8
+  akant5-base: 16
+  akant5-large: 32
+gradient_checkpointing:
+  akant5-small: false
+  akant5-base: false
+  akant5-large: false
+bf16: true
+dataloader_num_workers: 2
+ignore_data_skip: false

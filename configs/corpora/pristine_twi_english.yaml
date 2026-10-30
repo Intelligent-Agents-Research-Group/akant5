@@ -1,0 +1,67 @@
+name: pristine_twi_english
+hf_id: ghananlpcommunity/pristine-twi-english
+hf_revision: 89c1d085fd677387e4dad29df6a3a304359eee0e
+hf_split: train
+
+modality: parallel
+text_column: twi
+source_column: english_translation
+
+language: ak
+claimed_variety: null
+variety_audited: false
+
+provenance: synthetic
+licence: cc-by-nc-4.0
+licence_url: https://huggingface.co/datasets/ghananlpcommunity/pristine-twi-english
+commercial_use: false
+
+role: train
+normalization_rules:
+  - strip_control
+  - strip_zero_width
+  - nfc
+  - confusables
+  - spaces
+  - dashes
+  - quotes
+  - strip_markdown
+  - strip_speaker_labels
+  - collapse_whitespace
+
+expected_rows: 999497
+notes: >-
+  The single Ghana NLP synthetic source for this project. It supplies BOTH the
+  synthetic Twi monolingual text (M1/M2, consumed with as_pairs=false, which
+  yields the twi column alone) and the Twi-English translation pairs (M3,
+  as_pairs=true).
+
+  ghananlpcommunity/pristine-twi was previously declared alongside this source
+  and has been removed as redundant. Verified against the pinned revisions by
+  hashing every normalized Twi string in both datasets:
+
+    pristine-twi           999,498 rows / 999,485 unique normalized Twi
+    pristine-twi-english   999,497 rows / 999,484 unique normalized Twi
+    intersection           999,484  -> 100.0000% of this dataset's Twi is in
+                                       pristine-twi, and all but ONE row of
+                                       pristine-twi is here
+
+  The style column is present and identical in both; only char_count is absent,
+  and it is recomputable. Row ORDER differs between the two datasets, so the
+  overlap is set-level, not positional. Keeping both would have trained on the
+  same Twi text twice while appearing to add an independent corpus.
+
+  Gemini-generated throughout: the Twi from Ghanaian news paragraph prompts,
+  the English by a second Gemini pass over that Twi. The parallel card explicitly says
+  translations have not been manually verified by native Twi speakers. The
+  source card documents speaker-label/Markdown cleanup and language validation;
+  it does not document a native-speaker audit of the Twi. This is cleaned
+  synthetic data, not unrefined model output or established human ground truth. No headline
+  metric may be computed on this text; it carries volume for adaptation only.
+
+  The publication plan records this dataset as CC BY 4.0. The current card says
+  CC BY-NC 4.0. The NC terms are what this file pins, and they make any derived
+  checkpoint research-only.
+
+  The card states no dialect, so claimed_variety stays null and variety_audited
+  stays false: this text is NOT assigned to the Akuapem primary condition.
