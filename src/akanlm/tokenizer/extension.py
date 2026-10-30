@@ -1,11 +1,7 @@
-"""Extend mT5's unigram inventory and initialize only added lexical rows.
+"""Extend mT5 unigram pieces and initialize only added lexical rows.
 
-Failure modes: shifted original IDs, duplicated special/byte pieces, changed
-normalization, a different source tokenizer at model initialization, an output
-head accidentally tied to the inputs, uninitialized padding logits, or lost
-provenance. The end-to-end checks precede this implementation. Score copying
-is a declared heuristic, not joint unigram estimation or probability retention.
-"""
+Preserve original IDs/normalization and separate output weights.
+Copied piece scores are a heuristic, not joint unigram re-estimation."""
 
 from __future__ import annotations
 
@@ -76,12 +72,9 @@ def _original_tokenizer(reference):
 
 
 def extend_tokenizer(base_model, candidate_dir, output_dir, *, require_training_partitions=False):
-    """Append every missing NORMAL candidate piece without changing old IDs.
+    """Append missing NORMAL pieces without changing existing IDs.
 
-    The CLI requires protected training provenance. The Python API also permits
-    caller-supplied fixture tokenizers for offline verification; the report
-    explicitly records their missing partition protection.
-    """
+    The CLI requires protected training provenance; unprotected API inputs are flagged."""
     from sentencepiece import sentencepiece_model_pb2 as pb
     from tokenizers import Tokenizer
     from transformers import AutoTokenizer, PreTrainedTokenizerFast

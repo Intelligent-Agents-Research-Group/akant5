@@ -21,9 +21,7 @@ licence_url: https://huggingface.co/datasets/ghanaopenai/ghana-speech
 commercial_use: false
 
 role: train
-# No strip_speaker_labels: verse text such as "Gerson mmabarima ne: Libni ne
-# Simei." matches its `Name:` pattern (451 of 52,650 rows), and these
-# transcripts carry no speaker labels.
+# Keep verse text: the Name: pattern hits 451/52,650 rows despite no speaker labels.
 normalization_rules:
   - strip_control
   - strip_zero_width

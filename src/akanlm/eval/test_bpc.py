@@ -1,23 +1,8 @@
-"""Character-span BPC on the frozen CPT test split.
+"""Score frozen CPT test BPC with validation weights, corpora, masks, and scorer.
 
-A CPT run scores its validation split before and after training
-(``evaluation/initialization_char_bpc.json`` and ``evaluation/final_char_bpc.json``). This module
-scores the run's test split with the same weights, split manifest, masking settings and scorer, and
-writes ``evaluation/initialization_test_char_bpc.json`` or ``evaluation/final_test_char_bpc.json``.
-
-Checks made before any scoring:
-
-1. The validation record names this run's final weights (whose hash must equal ``completed.json``)
-   or its base checkpoint, and its identity (weights, split manifest, settings and scorer
-   implementation) equals the one recomputed here.
-2. The test corpora are the corpora scored on validation.
-3. Per corpus, the token-length guard is raised to the longest encoded task, so no task is
-   truncated. Runs that share a tokenizer must use the same guard; the first result for a tokenizer
-   records it, and later runs in the same parent directory are compared against it.
-4. An existing result is never overwritten. ``recheck`` rescores and requires equal values.
-
-Paths in the validation record are as recorded during CPT, so run this from the directory in
-which CPT was launched and pass the run directory in the same form.
+Verify initialization/final provenance and share nontruncating length guards
+across runs with the same tokenizer. Preserve existing results; recheck requires
+equal values. Use CPT's launch directory and original run-path form.
 """
 
 from __future__ import annotations
@@ -56,10 +41,9 @@ def destination(run: Path, checkpoint: str, recheck: bool = False) -> Path:
 
 
 def reference_identity(run: Path, checkpoint: str, *, ignore_scorer_version: bool = False):
-    """The validation record's identity, after checking which weights it names.
+    """Verify validation weight identity.
 
-    With ``ignore_scorer_version``, the scorer implementation may differ from the one that wrote
-    the validation record; both hashes are then recorded with the result.
+    ``ignore_scorer_version`` permits scorer changes and records both hashes.
     """
     from akanlm.eval.corpus_bpc import CharSpanConfig, implementation_sha256
     from akanlm.eval.denoising import weights_identity
@@ -95,11 +79,9 @@ def reference_identity(run: Path, checkpoint: str, *, ignore_scorer_version: boo
 
 
 def length_overrides(corpora, tokenizer, spec):
-    """Longest encoded task per corpus (EOS included), encoded exactly as lm.py encodes it.
-
-    Tokenizers with unprefixed sentinels (the replacement vocabulary) encode each task string in
-    one call. Stock and extended mT5 store sentinels only as ``▁<extra_id_N>``; for them lm.py
-    tokenizes the text between markers and inserts the sentinel IDs directly, and so does this.
+    """Longest task per corpus, matching lm.py encoding with EOS.
+    Encode unprefixed sentinels directly; insert stock/extended mT5's
+    word-prefixed sentinel IDs between tokenized spans.
     """
     import re
 
@@ -144,10 +126,7 @@ def length_overrides(corpora, tokenizer, spec):
 
 
 def reference_overrides(fingerprint: str, run: Path, exclude: Path):
-    """Overrides recorded by another test result with the same tokenizer, or (None, None).
-
-    Searched among the run directories next to ``run``.
-    """
+    """Find length overrides for the same tokenizer in sibling run results."""
     for path in sorted(run.parent.glob("*/evaluation/*_test_char_bpc.json")):
         if path == exclude:
             continue
@@ -171,10 +150,9 @@ def recheck_rows(rows, existing):
 def score_test_split(run: Path, checkpoint: str = "final", *, recheck: bool = False,
                      preflight: bool = False, ignore_scorer_version: bool = False,
                      output: Path | None = None, batch_size: int = 4) -> Path:
-    """Score the run's test split and return the path of the written result.
+    """Score the test split and return its result path.
 
-    ``output`` writes the result elsewhere instead of into the run's ``evaluation`` directory;
-    ``recheck`` compares the rescored values with the run's existing test result.
+    ``output`` sets the result path; ``recheck`` requires equal values.
     """
     if checkpoint not in VALIDATION:
         raise ValueError(f"checkpoint must be one of {sorted(VALIDATION)}")

@@ -1,8 +1,6 @@
-# One node, four DDP processes; every process holds a full model replica.
-# Global batch = per-device batch x accumulation x 4 = 1,024 examples, as in b200_2gpu.
-# Microbatches and activation checkpointing equal b200_2gpu, so per-GPU memory matches
-# the measured two-GPU runs; only accumulation is halved. The launcher requests two
-# CPU cores per rank, shared by the rank and its loaders.
+# Four DDP replicas; batch = per-device batch x accumulation x 4 = 1,024.
+# Match b200_2gpu microbatches/checkpointing and per-GPU memory; halve accumulation.
+# Two CPU cores per rank, shared with its loaders.
 description: Four B200 GPUs with two CPU cores and two data-loader workers per rank. Same per-GPU microbatches as b200_2gpu.
 world_size: 4
 per_device_train_batch_size:

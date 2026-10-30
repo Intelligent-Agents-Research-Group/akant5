@@ -13,12 +13,9 @@ MT5_BACKBONES = {
 
 
 def comparison_checkpoints(checkpoints: Sequence[str]) -> list[str]:
-    """Add controls without guessing model size from directory names.
-
-    A recorded CPT initialization separates CPT gains from vocabulary surgery.
-    The raw mT5 control matches the transformer backbone, not total parameter
-    count (surgery changes the embedding sizes). Afri-mT5 stays an external
-    reference and does not force a google/mt5-base control into small runs.
+    """Use recorded initialization and matching mT5 backbone as controls.
+    Vocabulary surgery changes total parameter count. Afri-mT5 is an external
+    reference; it does not determine the mT5 control size.
     """
     systems = []
     seen = set()

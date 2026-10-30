@@ -1,18 +1,7 @@
-"""Pinned column extraction for sources whose Hub files are not worth downloading whole.
+"""Extract pinned text columns into local ``<source>/<revision>/text.parquet``.
 
-``ghanaopenai/ghana-speech`` and ``ghanaopenai/kumawood-speech-transcriptions``
-store 16 kHz audio in the same parquet files as a few megabytes of transcripts
-(30.4 GB and 21.7 GB). ``allenai/c4`` ``en-multi`` is 11,264 gzip shards, of which a mixture's English
-budget needs only a small part.
-
-A source declaring ``hf_files`` is therefore extracted once, where the Hub is
-reachable: parquet column chunks are read by HTTP range request, so audio bytes
-are never transferred, and a JSON-lines shard is read only up to the budget the
-mixtures declare. The rows are written unchanged (normalization stays in the
-loader) to ``<root>/<source>/<revision>/text.parquet`` beside
-``extraction.json``. Loading reads only that local file, so training and audits
-run offline and cannot drift from the pinned revision.
-"""
+Use HTTP ranges to omit parquet audio and stop JSONL at declared budgets.
+Write unchanged rows plus ``extraction.json``; normalization stays in the loader."""
 
 from __future__ import annotations
 
@@ -61,12 +50,9 @@ def implementation_sha256() -> str:
 
 
 def url_domain_summary(rows: Iterator[dict], column: str = "url", *, top: int = 100) -> dict:
-    """Summarize URL hostnames in an extracted prefix for its data statement.
+    """Report hostname counts, without inferring registrable domains.
 
-    This deliberately reports hostnames rather than trying to infer registrable
-    domains (which would require a mutable public-suffix list).  It is useful
-    for documenting that mC4 shard 0 is a fixed slice, not a random sample.
-    """
+    A fixed mC4 prefix is not a random sample."""
     domains: Counter[str] = Counter()
     urls_seen = invalid_or_missing = 0
     for row in rows:
@@ -133,14 +119,10 @@ def _satisfies(record: dict, max_rows: int | None, max_chars: int | None) -> boo
 
 def extract(source: CorpusSource, root: Path | None = None, *, max_rows: int | None = None,
             max_chars: int | None = None, fs=None) -> dict:
-    """Write the declared columns of *source*, up to the budget, and return the record.
+    """Extract declared columns up to normalized row/character budgets.
 
-    The budget follows :func:`akanlm.corpora.loaders.load_texts`: a row counts
-    once its text is a nonempty string that stays nonempty after normalization,
-    characters are counted after normalization, and the row that reaches the
-    budget is kept whole. An existing extraction is reused when it matches the
-    declaration and covers the budget; otherwise this refuses to overwrite it.
-    """
+    Keep the last document whole. Reuse only matching extractions covering the budget;
+    refuse to overwrite incompatible output."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -246,12 +228,9 @@ def read_record(source: CorpusSource, root: Path | None = None) -> dict:
 
 
 def read_rows(source: CorpusSource, root: Path | None = None, *, verify: bool = True) -> Iterator[dict]:
-    """Rows of a local extraction; ``group_by`` sources yield one row per rebuilt document.
+    """Yield local rows, or newline-joined documents for ``group_by`` sources.
 
-    A rebuilt document joins its rows' text with newlines in ``order_by``
-    order. Documents follow ascending ``group_by`` values and carry the group
-    value and the number of joined rows.
-    """
+    Groups sort ascending; text follows ``order_by`` with group/row-count metadata."""
     import pyarrow.parquet as pq
 
     record = read_record(source, root)

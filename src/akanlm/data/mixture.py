@@ -1,31 +1,6 @@
-"""Assemble continued-pretraining mixtures for AkanLM.
+"""Assemble CPT mixtures with source caps, deduplication, and English replay.
 
-This module defines the source-cap-aware data mixing recipes used during
-continued pretraining (CPT). Each mixture variant is a composition of
-monolingual Twi text, English replay text, and optional Twi-English parallel
-pairs for cross-lingual alignment.
-
-Mixture registry:
-    M0: no CPT; reference run based on the original mT5.
-    M1: baseline Twi mixture using pristine-twi-english's Twi column plus
-        Twi Wikipedia.
-    M2: M1 plus English Wikipedia replay for a replay-distribution
-        ablation.
-    M2c: default replay variant; M1 plus extracted English mC4 replay.
-    M3: M2c plus Twi-English parallel pairs for cross-lingual alignment.
-    M1x: audited expanded Twi pool with eight sources.
-    M1x_en: M1x plus mC4 replay budgeted on retained training characters.
-
-Notes:
-    M2 and M2c share the same Twi components, seed, objective, and English
-    character cap, differing only in the replay distribution source.
-    M3 inherits the M2c English replay distribution and adds a parallel
-    objective over the existing Twi corpus. ``pristine-twi`` and
-    ``pristine-twi-english`` were verified to contain the same Twi text;
-    therefore only ``pristine-twi-english`` is declared. Twi Wikipedia is
-    included once in the M1/M2/M2c/M3 baseline, and its repeat factor is
-    tracked explicitly in each mixture configuration.
-"""
+Budget replay by retained normalized training characters before tokenization."""
 
 from __future__ import annotations
 
@@ -134,39 +109,10 @@ def load_all(mixtures_dir: Path = Path("configs/mixtures")) -> list["MixtureConf
 
 
 def derive_source_caps(configs: Iterable["MixtureConfig"]) -> dict[str, int | None]:
-    """Derive the per-source row/character caps that reflect the training read.
+    """Merge row/character caps across all mixtures, including blocked ones.
 
-    This function converts the component-level mixture budget declarations into
-    an audit-safe source-cap dictionary. The goal is to preserve the exact
-    consumption envelope that training will observe while avoiding false
-    certainty: when any component using a source is uncapped, the source must
-    remain uncapped for the audit sweep. This follows the same conservative
-    widening rule used elsewhere in the repository for corpus provenance and
-    training safety checks.
-
-    Rules:
-        - A source is capped only when every component that references it
-          declares an explicit cap. A single uncapped component makes the
-          source effectively uncapped for audit coverage.
-        - If all components cap the same source, keep the largest cap found
-          across the configs so the merged result is a safe superset of every
-          mixture.
-        - Blocked mixtures still contribute to the cap map. This keeps the
-          derived source caps valid regardless of which mixture is later
-          selected.
-        - Sources omitted from the returned map are referenced by no mixture
-          and must not be swept during the audit.
-
-    Args:
-        configs: Iterable of mixture configurations whose components define
-            the source budget declarations.
-
-    Returns:
-        dict[str, SourceCap]: A mapping from source name to the merged cap
-        profile. The returned structure is intentionally conservative: an
-        uncapped axis on either side remains uncapped, and the largest
-        bounded value is retained when all references are capped.
-    """
+    Any uncapped use leaves that axis uncapped; otherwise keep the largest cap.
+    Omit sources unused by every mixture."""
     caps: dict[str, SourceCap] = {}
     for config in configs:
         for component in config.components:
@@ -177,25 +123,7 @@ def derive_source_caps(configs: Iterable["MixtureConfig"]) -> dict[str, int | No
 
 
 def _widen(a: "SourceCap", b: "SourceCap") -> "SourceCap":
-    """Return a conservative merged cap that covers both declarations.
-
-    The widening rule is applied independently per axis:
-    - If either declaration is uncapped on an axis, the merged declaration is
-      uncapped on that axis.
-    - If both declarations are capped on an axis, the merged declaration keeps
-      the larger bounded value.
-
-    This behavior is intentionally conservative for source budget auditing:
-    it avoids under-reading by treating any cross-axis ambiguity as uncapped,
-    while preserving the strongest explicit cap when both inputs are bounded.
-
-    Args:
-        a: The first source cap profile to merge.
-        b: The second source cap profile to merge.
-
-    Returns:
-        SourceCap: A merged profile that safely covers both source declarations.
-    """
+    """Merge each cap axis by maximum; an uncapped input keeps that axis uncapped."""
     return SourceCap(
         None if a.rows is None or b.rows is None else max(a.rows, b.rows),
         None if a.chars is None or b.chars is None else max(a.chars, b.chars),
@@ -203,29 +131,9 @@ def _widen(a: "SourceCap", b: "SourceCap") -> "SourceCap":
 
 
 class ExactDuplicates:
-    """Deduplicate records in a mixture by canonical text identity.
+    """Keep the first (source, index) per NFC/casefolded/whitespace-collapsed content key.
 
-    This class keeps the first ``(source, index)`` record for each normalized
-    text in a dataset mixture. Text identity is derived from
-    :func:`akanlm.data.cpt_splits.content_key`, which applies NFC
-    normalization, case folding, and whitespace collapsing. As a result, the
-    same normalized content remains associated with its first observed source
-    and index, while later duplicates are discarded. This prevents repeated
-    rows or alternate consumption modes from introducing duplicate text into
-    downstream NLP training.
-
-    The first-observed record wins deterministically. If the same canonical
-    content appears under a different source or index, the later copy is
-    removed and tracked for reporting. This is useful for corpora that contain
-    repeated, mirrored, or cross-source prompt pools, such as the examples
-    below:
-
-    - ``ghana_farmer_qa_twi`` repeats transcripts across many QA rows.
-    - ``ghana_speech_asante`` contains repeated readings of the same chapter
-      under different recordings.
-    - ``ghok_parallel_en_twi`` and ``pristine_twi_english`` share a prompt
-      pool.
-    """
+    Count later duplicates, preserving deterministic source ownership."""
 
     def __init__(self) -> None:
         self._owner: dict[int, int] = {}
@@ -312,38 +220,13 @@ def iter_documents(
     workers: int = 1,
     exposure: dict | None = None,
 ) -> Iterator[tuple[object, str, str]]:
-    """Stream ``(text, source_name, provenance)`` for a mixture.
+    """Yield ``(text, source, provenance)`` in component order with configured repeats.
 
-    The safety filter sees every record and every parallel side before exact
-    duplicates are dropped. This prevents a duplicate target with a different
-    translation from hiding held-out text from the exclusion guard.
-
-    Args:
-        config: The mixture to build.
-        corpora_dir: Where corpus declarations live.
-        sources: Preloaded declarations, for tests.
-        document_filter: A guard such as
-            :class:`~akanlm.data.cpt_splits.TrainingFilter`. Its
-            ``check(target, *other_texts)`` decides without side effects and
-            ``record(source, outcome)`` counts that decision.
-        duplicates: Collects duplicate counts; a fresh index when omitted.
-        transform: Applied to each accepted document's text, which the result
-            replaces. ``functools.partial(packing.encode, tokenizer)`` yields
-            token ids.
-        workers: Processes that normalize, filter and transform. The output,
-            filter counts and duplicate report are the same for any value,
-            because results are consumed in dataset order and every counter,
-            budget and duplicate claim is updated in this process. With more
-            than one worker, *document_filter* and *transform* must be picklable.
-        exposure: Optional output dictionary of retained document/character
-            counts. Filled only when iteration completes successfully. Replay
-            requires a TrainingFilter and counts text before transformation.
-    Yields:
-        Documents in component order, each repeated per its ``repeat`` factor.
-    Raises:
-        ValueError: If the mixture is blocked, names an unknown source, or
-            includes a source whose role forbids training use.
-    """
+    Filter every parallel side before deduplication. Update budgets/counters and
+    first-seen ownership in the parent, preserving output across worker counts.
+    Transforms replace text; worker inputs must be picklable.
+    Replay requires TrainingFilter; exposure counts text before transforms and
+    is written only after successful iteration. Reject blocked/nontraining sources."""
     if config.blocked_on:
         raise ValueError(f"mixture {config.name!r} is blocked: {config.blocked_on}")
 
@@ -472,14 +355,7 @@ def _validate_replay(config: MixtureConfig, sources: dict[str, CorpusSource]) ->
 
 
 def validate(config: MixtureConfig, corpora_dir: Path = Path("configs/corpora")) -> dict:
-    """Check a mixture without reading any data.
-
-    Verifies that every source exists, is trainable, and that parallel sources
-    consumed as pairs are actually parallel. Returns a summary for the run card.
-
-    Raises:
-        ValueError: On any of the above.
-    """
+    """Validate source existence, training roles, and pair modalities; return a run-card summary."""
     from akanlm.audit.sources import assert_trainable
 
     sources = load_sources(corpora_dir)

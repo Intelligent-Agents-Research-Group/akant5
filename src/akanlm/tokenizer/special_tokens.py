@@ -1,10 +1,6 @@
-"""Resolve sentinels without assuming their position in an extended vocabulary.
+"""Resolve sentinels by identity, including nonfinal extension IDs.
 
-Failure modes: sentinel pieces can be absent, alias the unknown or padding token,
-share an ID, lie outside the tokenizer vocabulary, or move away from the final
-100 vocabulary rows after lexical pieces are appended. Validate identities before
-using the IDs in masking or rejecting already-corrupted input.
-"""
+Reject missing, duplicate, out-of-vocabulary, unknown, or padding aliases."""
 
 from __future__ import annotations
 

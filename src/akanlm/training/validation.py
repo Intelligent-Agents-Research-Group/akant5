@@ -1,10 +1,4 @@
-"""Held-out document protection and the CPT validation trainer.
-
-Text from ``Role.EVAL_ONLY`` and ``Role.HELDOUT`` sources is excluded from
-training. The trainer scores the corpus-split validation sets with the
-token-span scorer in ``akanlm.eval.denoising``. Transformers is imported only
-inside ``trainer_classes()`` so configuration loading stays lightweight.
-"""
+"""Protect held-out text and score token-weighted corpus validation losses."""
 
 from __future__ import annotations
 
@@ -18,24 +12,9 @@ WORDS = re.compile(r"\w+", re.UNICODE)
 
 
 def heldout_documents(sources):
-    """Load declared held-out and eval-only text for exclusion only.
+    """Return protected ``(items, provenance)`` from pinned held-out/eval-only sources.
 
-    The audit ledger records corpus counts rather than training-record
-    removal IDs. This function rebuilds the exclusion guard directly from
-    the pinned source declarations and protects both language sides of any
-    parallel corpus entries.
-
-    Args:
-        sources: Mapping of source names to declared modality/role metadata.
-
-    Returns:
-        Tuple of ``(items, provenance)`` where items are evaluation-only
-        protected text records and provenance stores document-level
-        provenance metadata.
-
-    Raises:
-        ValueError: If a declared held-out source does not yield records.
-    """
+    Protect both sides of parallel records; reject declared sources with no records."""
     from akanlm.audit.sources import Modality, Role
     from akanlm.corpora.loaders import load_pairs, load_texts
 
@@ -65,13 +44,7 @@ def heldout_documents(sources):
 
 
 class ProtectedDocuments:
-    """Reject records that overlap any protected evaluation or held-out text.
-
-    The guard verifies both language sides before allowing a parallel record
-    to be rendered. It also indexes short protected sentences as embedded
-    word paths so that a sentence-level match inside a longer document is
-    detected even when the 13-gram n-gram finder cannot see it.
-    """
+    """Reject n-gram overlap on either language side and embedded short sentences."""
 
     def __init__(self, items):
         self.index = NgramIndex(13)
@@ -160,9 +133,7 @@ def trainer_classes():
                     "scale_parameter": cpt_config.adafactor_scale_parameter,
                     "relative_step": False,
                     "warmup_init": False,
-                    # These currently equal transformers' defaults, but are
-                    # part of Google's resolved Mesh Adafactor recipe. Pin
-                    # them so a dependency upgrade cannot alter optimization.
+                    # Pin Mesh Adafactor settings across dependency upgrades.
                     "decay_rate": cpt_config.adafactor_decay_rate,
                     "beta1": cpt_config.adafactor_beta1,
                     "clip_threshold": cpt_config.adafactor_clip_threshold,
@@ -203,11 +174,9 @@ def trainer_classes():
             return (loss, outputs) if return_outputs else loss
 
         def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
-            """Score each validation source and report token-weighted NLL per source and overall.
+            """Sum validation nats and target tokens across ranks before dividing.
 
-            Each rank scores every ``world_size``-th example; nats and target
-            tokens are summed across ranks before dividing.
-            """
+            Each rank scores every ``world_size``-th example."""
             import torch
 
             from akanlm.eval.denoising import score

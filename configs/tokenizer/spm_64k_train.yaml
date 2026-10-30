@@ -7,9 +7,8 @@ model_type: unigram
 character_coverage: 1.0
 byte_fallback: true
 
-# Fit only the frozen CPT training partitions of the nine M1x+English sources.
-# Keep the historical tokenizer-fitting share fixed to isolate the split change.
-# This 5.67% fitting share is independent of the 20% CPT replay policy.
+# Fit the nine frozen M1x+English training sources; retain 5.67% English fitting,
+# independent of the 20% CPT replay share.
 twi_sources:
   - pristine_twi_english
   - ghok_parallel_en_twi

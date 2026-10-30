@@ -1,44 +1,8 @@
-"""Frozen MT probe protocol: learning-rate selection on development data, then seeded test runs.
+"""Resumable MT evaluation under frozen data, procedure, and dropout settings.
 
-The probe measures, per model size and direction, how translation quality
-after identical fine-tuning changes with continued pretraining. The procedure
-below is fixed before any test decoding and does not depend on the language,
-so a Kpelle or Vai study reuses it unchanged; only the task (language code and
-data) differs.
-
-Each stage is resumable and writes its artifacts under one study directory:
-
-1. ``freeze`` runs the preflight on training and development text
-   (deduplication against development and test text, the length rule,
-   tokenizer coverage, the normalization guard) and writes ``protocol.json``.
-   It decodes nothing.
-2. ``select`` fine-tunes one system in one direction at every grid learning
-   rate with the selection seed, restores the lowest-development-loss weights,
-   decodes the development split, and chooses the rate by development chrF++.
-   It never loads test data.
-3. ``test`` writes a receipt binding the protocol and the selection, then
-   fine-tunes the remaining seeds at the selected rate and decodes every test
-   set for every seed. The selection run is the first seed's run.
-4. ``report`` computes seed means and standard deviations and paired
-   bootstrap differences between systems from the saved predictions alone.
-
-Failure modes, listed before the code was written:
-
-- F1: the scored weights are not the lowest-development-loss checkpoint
-  (stop-step weights, the patience reference step, or a deleted checkpoint);
-- F2: an interrupted run resumes with lost best-checkpoint or patience state;
-- F3: learning-rate selection reads or decodes test data;
-- F4: test decoding runs under a procedure, task data or selection that
-  differs from the frozen one;
-- F5: the learning-rate choice is ambiguous (ties, missing grid points);
-- F6: seeds or rates share a directory, or the seed is not applied;
-- F7: predictions are misaligned with references, or a partial file from an
-  interrupted run counts as complete;
-- F8: truncation or tokenizer coverage gaps bias one system without notice;
-- F9: weights are deleted before a stage that still needs them;
-- F10: language-specific constants change the procedure for a new language.
-- F11: a dropout override changes source artifacts, misses instantiated
-  dropout modules, or differs between selection, test, and resumed runs.
+Freeze audits inputs without decoding. Select rates by development chrF++,
+scoring minimum-dev-loss checkpoints without loading tests. Seeded tests verify
+receipts and alignment; reports summarize seeds and bootstrap saved predictions.
 """
 
 from __future__ import annotations
@@ -69,8 +33,7 @@ logger = get_logger(__name__)
 
 PROTOCOL_VERSION = "mt_probe_best_dev_v5"
 
-#: The frozen procedure. Its canonical-JSON hash is recorded in every study,
-#: selection and receipt; changing any value requires a new version.
+#: Canonical hash binds studies, selections, and receipts; changes need a new version.
 PROCEDURE: dict = {
     "version": PROTOCOL_VERSION,
     "fine_tuning": {
@@ -162,9 +125,7 @@ CODE_FILES = (
 )
 
 
-# ---------------------------------------------------------------------------
 # Hashing and small file helpers
-# ---------------------------------------------------------------------------
 
 
 def canonical_sha256(value) -> str:
@@ -182,7 +143,7 @@ def file_sha256(path: Path) -> str:
 
 
 def _write_json(path: Path, document: dict) -> Path:
-    """Write atomically, so an interrupted write never leaves a valid-looking file."""
+    """Write atomically to prevent partial records."""
     ensure_dir(path.parent)
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -213,9 +174,7 @@ def code_provenance(repo_root: Path | None = None) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Tasks: one language, its training/development split and its test sets
-# ---------------------------------------------------------------------------
+# Task data
 
 
 @dataclass(frozen=True)
@@ -255,11 +214,7 @@ def _check_ids(name: str, items: Sequence[Item]) -> None:
 
 
 def load_task(spec: dict, *, include_tests: bool) -> Task:
-    """Rebuild a task from its recorded spec.
-
-    ``include_tests=False`` is how selection guarantees it never reads test
-    text (F3).
-    """
+    """Rebuild the recorded task; ``include_tests=False`` excludes test text."""
     if spec["kind"] == "twi_mafand_flores":
         task = _twi_task(spec, include_tests)
     elif spec["kind"] == "local_jsonl":
@@ -277,10 +232,9 @@ def twi_task_spec(corpora_dir: Path, limit: int | None = None) -> dict:
 
 
 def local_task_spec(language: str, data_dir: Path, limit: int | None = None) -> dict:
-    """A local JSONL task: ``train.jsonl``, ``dev.jsonl`` and ``test_<name>.jsonl``.
-
-    Each line is ``{"id": ..., "translation": {"en": ..., "<code>": ...}}``;
-    ``id`` is optional and defaults to ``<file stem>-<line number>``.
+    """Declare ``train.jsonl``, ``dev.jsonl``, and ``test_<name>.jsonl``.
+    Rows use ``{"id": ..., "translation": {"en": ..., "<code>": ...}}``;
+    missing IDs default to ``<file stem>-<line number>``.
     """
     if language == "en" or language not in LANGUAGE_NAMES:
         raise ValueError(f"Unsupported probe language: {language}")
@@ -303,8 +257,7 @@ def _twi_task(spec: dict, include_tests: bool) -> Task:
 
     task = Task(language="twi", spec=spec, train=mafand_items("train"),
                 dev=mafand_items("validation"))
-    # The loader has already normalized MAFAND; the guard checks that the
-    # probe's own normalization removes nothing further.
+    # Check probe normalization after the loader's MAFAND normalization.
     task.raw_train_dev = [
         (language, item.side(language))
         for item in task.train + task.dev for language in ("en", "twi")
@@ -388,9 +341,7 @@ def training_items(task: Task, protocol: dict) -> list[Item]:
     return [item for item in task.train if item.id not in removed]
 
 
-# ---------------------------------------------------------------------------
 # Preflight audits
-# ---------------------------------------------------------------------------
 
 
 def _combining_marks(text: str) -> int:
@@ -420,11 +371,9 @@ def normalization_guard(raw: Sequence[tuple[str, str]]) -> dict:
 
 def audit_tokenizer(tokenizer, train: Sequence[Item], dev: Sequence[Item], language: str,
                     caps: Sequence[int] = AUDITED_LENGTHS) -> dict:
-    """Development lengths per direction and side, and coverage per language.
-
-    Lengths count the tokens the probe feeds the model (prefix and EOS
-    included). Coverage counts ``<unk>`` ids and exact decode round trips over
-    training and development text, without special tokens.
+    """Audit dev lengths by direction/side and train/dev coverage by language.
+    Lengths include prefix/EOS; coverage counts unknown IDs and exact decode
+    round trips without special tokens.
     """
     unk = tokenizer.unk_token_id
     audit: dict = {"directions": {}, "coverage": {}}
@@ -474,9 +423,7 @@ def worst_dev_fraction(audit: dict, cap: int) -> float:
     )
 
 
-# ---------------------------------------------------------------------------
 # Freeze
-# ---------------------------------------------------------------------------
 
 
 def protocol_path(study: Path) -> Path:
@@ -507,18 +454,9 @@ def freeze(
     procedure: dict | None = None,
     dropout_rate: float | None = None,
 ) -> dict:
-    """Run the preflight and write ``protocol.json`` and one file per system.
-
-    A study is frozen once. Calling this again with the same task and
-    procedure only registers new systems, and only when their tokenizer passes
-    the length rule at the length already resolved (F4, F8).
-
-    Args:
-        procedure: Defaults to :data:`PROCEDURE`. Custom budgets mark a study
-            as smoke; an explicit dropout override is a supported variant.
-        dropout_rate: Applied to every system and frozen into the procedure.
-            Omission preserves checkpoint rates. Repeat the same override
-            when registering additional systems under an existing study.
+    """Freeze audits; added systems must match task/procedure and frozen lengths.
+    Custom budgets mark smoke studies. Dropout overrides are supported, frozen
+    for all systems, and required again when adding systems; None preserves rates.
     """
     from transformers import AutoTokenizer
 
@@ -620,7 +558,7 @@ def freeze(
 
 
 def load_protocol(study: Path) -> dict:
-    """Read ``protocol.json`` and check it against its hash and the code (F4)."""
+    """Read ``protocol.json`` and verify its hash and code provenance."""
     path = protocol_path(study)
     if not path.exists():
         raise FileNotFoundError(f"{study}: no protocol.json; run eval mt-freeze first")
@@ -650,7 +588,7 @@ def registered_system(study: Path, checkpoint: str) -> dict:
 
 
 def verified_task(protocol: dict, *, include_tests: bool) -> Task:
-    """Reload the task and require the exact text frozen in the protocol (F4)."""
+    """Reload the exact task text frozen in the protocol."""
     recorded = protocol["task"]
     task = load_task(recorded["spec"], include_tests=include_tests)
     checks = [("train", task.train, recorded["train"]["items_sha256"]),
@@ -666,9 +604,7 @@ def verified_task(protocol: dict, *, include_tests: bool) -> Task:
     return task
 
 
-# ---------------------------------------------------------------------------
 # Runs
-# ---------------------------------------------------------------------------
 
 
 def probe_config(procedure: dict, direction: str, learning_rate: float, seed: int,
@@ -699,7 +635,7 @@ def probe_config(procedure: dict, direction: str, learning_rate: float, seed: in
 
 
 def run_dir(study: Path, direction: str, label: str, learning_rate: float, seed: int) -> Path:
-    """One directory per system, direction, rate and seed (F6)."""
+    """One directory per system, direction, rate, and seed."""
     return study / "runs" / direction / label / f"lr{learning_rate:.0e}_seed{seed}"
 
 
@@ -721,7 +657,7 @@ def _decode_paths(run: Path, name: str) -> tuple[Path, Path]:
 
 
 def decode_complete(run: Path, name: str, items: Sequence[Item]) -> dict | None:
-    """The score record when both files exist and match the items (F7)."""
+    """Return scores only when both files exist and match the items."""
     predictions, scores = _decode_paths(run, name)
     if not predictions.exists() or not scores.exists():
         return None
@@ -771,7 +707,7 @@ def decode_and_score(model, tokenizer, items: Sequence[Item], config: ProbeConfi
         "predictions_sha256": file_sha256(predictions),
         "retokenized_predictions_at_length_cap": at_cap,
     })
-    # The score file is written last, so its presence marks a complete decode.
+    # Write scores last to mark a complete decode.
     _write_json(scores, record)
     return record
 
@@ -831,7 +767,7 @@ def run_decodes(run: Path, checkpoint: str, system: str, items_by_name: dict,
 
 
 def choose_learning_rate(candidates: Sequence[dict], grid: Sequence[float]) -> dict:
-    """Highest development chrF++, then lower restored loss, then lower rate (F5)."""
+    """Highest development chrF++, then lower restored loss, then lower rate."""
     if sorted(c["learning_rate"] for c in candidates) != sorted(grid):
         raise ValueError("Selection requires exactly one run per grid learning rate")
     best = max(round(c["dev_chrf2pp"], 2) for c in candidates)
@@ -911,7 +847,7 @@ def results_path(study: Path, direction: str, label: str) -> Path:
 
 
 def test(study: Path, checkpoint: str, direction: str, keep_weights: bool = False) -> dict:
-    """Seeded test runs at the selected rate, after writing the receipt (F4)."""
+    """Write the receipt, then run seeded tests at the selected rate."""
     protocol = load_protocol(study)
     system = registered_system(study, checkpoint)
     label = system["system"]
@@ -991,9 +927,7 @@ def test(study: Path, checkpoint: str, direction: str, keep_weights: bool = Fals
     return document
 
 
-# ---------------------------------------------------------------------------
 # Report
-# ---------------------------------------------------------------------------
 
 
 def _predictions(run: Path, name: str) -> dict[str, dict]:
@@ -1004,11 +938,9 @@ def _predictions(run: Path, name: str) -> dict[str, dict]:
 
 def paired_bootstrap(a_by_seed: Sequence[Sequence[str]], b_by_seed: Sequence[Sequence[str]],
                      references: Sequence[str], resamples: int, seed: int) -> dict:
-    """Bootstrap the difference of seed-averaged corpus chrF++ over sentences.
-
-    Each resample draws sentence indices with replacement and recomputes
-    every seed's corpus chrF++ from per-sentence statistics, so the interval
-    covers sentence sampling; seed variation is reported separately.
+    """Bootstrap seed-averaged corpus chrF++ differences over paired sentences.
+    Resample sentence indices with replacement and recompute each seed's score.
+    Intervals cover sentence sampling; seed variation is reported separately.
     """
     import numpy as np
     import sacrebleu

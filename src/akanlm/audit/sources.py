@@ -1,15 +1,6 @@
-"""Corpus source declarations.
+"""Validate corpus YAML: pinned revision, license, provenance, variety, and split role.
 
-Every corpus this project touches is declared in a YAML file under
-``configs/corpora/`` and validated against :class:`CorpusSource`. The schema
-enforces the provenance fields the publication plan requires before any text
-enters a pretraining mixture: pinned revision, licence, human-vs-synthetic
-provenance, claimed variety, and the split role.
-
-The ``role`` field is the safety interlock. A source marked ``eval_only`` can
-never be pulled into a mixture — :func:`load_sources` refuses to return it to
-mixture builders, and the mixture config validator rejects it by name.
-"""
+Evaluation-only sources cannot enter training mixtures."""
 
 from __future__ import annotations
 

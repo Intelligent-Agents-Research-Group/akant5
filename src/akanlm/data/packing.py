@@ -1,15 +1,6 @@
-"""Tokenize and pack documents into fixed-length sequences.
+"""Concatenate documents into fixed-length chunks; omit document EOS by default.
 
-Span corruption wants dense, rectangular batches: every sequence exactly
-``tokens_length`` tokens, so the collator's deterministic length arithmetic
-holds. Documents are concatenated and cut into fixed-length chunks without
-document ``</s>`` separators, matching Google's preprocessing; the collator adds
-sequence-final EOS after corruption.
-
-Each chunk keeps the ``provenance`` of the document that contributed most of
-it, so a finished run can be re-analysed by human-vs-synthetic share without
-re-tokenizing the corpus.
-"""
+The collator adds sequence EOS. Each chunk takes its largest-contributor provenance."""
 
 from __future__ import annotations
 
@@ -72,24 +63,10 @@ def pack(
     stats: PackingStats | None = None,
     append_eos: bool = True,
 ) -> Iterator[PackedChunk]:
-    """Concatenate and chunk documents to exactly *tokens_length* tokens.
+    """Yield exact ``tokens_length`` chunks from text or pre-encoded documents.
 
-    Args:
-        documents: ``(text, source_name, provenance)`` triples. ``text`` may
-            instead be the document's ids from :func:`encode` with *tokenizer*,
-            as :func:`~akanlm.data.mixture.iter_documents` yields when it
-            tokenizes in worker processes.
-        tokenizer: Tokenizer to encode with.
-        tokens_length: Raw length per chunk, from
-            :func:`~akanlm.data.collator.compute_input_and_target_lengths`.
-        stats: Optional accumulator.
-        append_eos: Insert ``</s>`` between documents. CPT keeps it off to match
-            Google's concatenation before corruption and sequence-final EOS.
-    Yields:
-        :class:`PackedChunk` of exactly *tokens_length* ids. The final partial
-        chunk is dropped so every batch stays rectangular; its size is recorded
-        in *stats*.
-    """
+    Optional ``append_eos`` inserts document separators; CPT leaves it off.
+    Drop and count the final partial chunk."""
     stats = stats if stats is not None else PackingStats()
     eos = tokenizer.eos_token_id
 

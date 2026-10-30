@@ -1,11 +1,7 @@
-"""Continued pretraining (CPT) of mT5-layout models, single-process or DDP.
+"""Single-process/DDP mT5 CPT using the resolved Mesh T5 recipe.
 
-A PyTorch/Hugging Face port of the resolved Mesh TensorFlow T5 recipe
-(Adafactor, span corruption, rsqrt schedule); numerical parity with Mesh is not
-claimed. DDP holds one full model replica per GPU. Every run writes
-``run_card.json`` with mixture, manifest, tokenizer, seed, git SHA and
-token-budget metadata.
-"""
+Each GPU holds a full replica. Run cards record provenance and token budgets;
+numerical parity with Mesh is not claimed."""
 
 from __future__ import annotations
 
@@ -25,13 +21,9 @@ logger = get_logger(__name__)
 
 
 def configure_loss_normalization(model) -> None:
-    """Make the Trainer divide each microbatch loss by the accumulation steps.
+    """Disable Trainer token counting and world-size scaling for mT5's mean loss.
 
-    mT5 returns a microbatch mean and ignores ``num_items_in_batch``. With
-    ``accepts_loss_kwargs`` false, the Trainer neither counts target tokens
-    nor rescales the loss by the process count; target-capacity normalization
-    is applied in ``ValidationTrainer.compute_loss``.
-    """
+    Trainer handles accumulation; ValidationTrainer applies target-capacity normalization."""
     model.accepts_loss_kwargs = False
 
 
@@ -42,16 +34,9 @@ _ACCEL_METADATA = frozenset({"description"})
 
 
 def load_accel_profile(accel: Path | str, model_name: str) -> dict:
-    """Flatten an accelerator profile into TrainingConfig overrides for one model.
+    """Read a profile path or ``configs/accel/<name>.yaml`` as config overrides.
 
-    ``accel`` is a path or a bare name resolved as ``configs/accel/<name>.yaml``.
-    A value is shared by all models or is a mapping keyed by model name.
-
-    Raises:
-        FileNotFoundError: The profile does not exist.
-        KeyError: A key is not a TrainingConfig field, or a mapping has no
-            row for ``model_name``.
-    """
+    Values may be shared or keyed by model; reject missing or unknown fields."""
     path = Path(accel)
     if not path.suffix:
         path = ACCEL_ROOT / f"{accel}.yaml"
@@ -95,11 +80,8 @@ class TrainingConfig:
 
     mixture: str = "m1x_en"
 
-    # Google's mT5 sequence_length = {'inputs': 1024, 'targets': 256}.
-    # input_length is the post-corruption encoder length; the raw packing
-    # length is derived from it. target_length is the decoder allocation:
-    # 1,137 raw tokens yield 229 targets, padded to 256. Validation and test
-    # tasks use these same values (DenoisingConfig.from_training).
+    # 1,024 encoder slots require 1,137 raw tokens and 229 targets, padded to 256.
+    # Validation/test use the same lengths (DenoisingConfig.from_training).
     input_length: int = 1024
     target_length: int = 256
     noise_density: float = 0.15
@@ -169,15 +151,7 @@ class TrainingConfig:
     def from_yaml(
         cls, path: Path, accel: Path | str | None = None, **overrides
     ) -> TrainingConfig:
-        """Load a model config, optionally overlaying an accelerator profile.
-
-        Args:
-            path: ``configs/models/*.yaml``.
-            accel: ``configs/accel/*.yaml``, or the bare profile name
-                (``b200``, ``rtx6000``). Applied *between* the model config
-                and the explicit overrides, so a flag on the command line
-                still wins over the profile.
-        """
+        """Load model settings, then accelerator overrides, then explicit overrides."""
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         if accel is not None:
             data.update(load_accel_profile(accel, data["name"]))
@@ -199,19 +173,10 @@ class TrainingConfig:
 
 
 def resolve_milestone_steps(config: TrainingConfig) -> list[int]:
-    """Return the global steps whose checkpoints are preserved.
+    """Resolve explicit or doubling milestones, always including ``max_steps``.
 
-    The ``"doubling"`` schedule is computed at startup rather than stored in
-    the config, so resuming with a larger ``max_steps`` leaves the recorded
-    training plan unchanged and adds only the later milestones. Its steps are
-    ``s, 2s, 4s, ...`` below ``max_steps``, where ``s`` is the first multiple of
-    ``save_steps`` at or after ``warmup_steps``, followed by ``max_steps``
-    itself, which the Trainer always saves.
-
-    Raises:
-        ValueError: Unknown schedule name, or an explicit step not aligned
-            with ``save_steps``.
-    """
+    Doubling starts at the first save-aligned step at/after warmup: s, 2s, 4s, ... .
+    Explicit steps must align with ``save_steps``; longer resumes add later milestones."""
     if isinstance(config.milestone_steps, str):
         if config.milestone_steps != "doubling":
             raise ValueError(f"Unknown milestone schedule {config.milestone_steps!r}; use 'doubling' or a list")
@@ -296,16 +261,9 @@ def build_dataset(
     require_cache: bool = False,
     workers: int = 1,
 ):
-    """Materialise packed chunks for a mixture as a ``datasets.Dataset``.
+    """Return packed ``(dataset, mixture_summary, packing_stats)``.
 
-    With ``require_cache``, a missing cache raises :class:`PackingCacheMissing`
-    instead of packing, so a GPU job cannot spend its allocation tokenizing.
-    ``workers`` processes normalize, filter and tokenize documents. The chunks
-    and ``preparation.json`` do not depend on it, so it is not part of the cache key.
-
-    Returns:
-        ``(dataset, mixture_summary, packing_stats)``.
-    """
+    ``require_cache`` rejects missing caches. Worker count does not change cache identity."""
     from functools import partial
 
     from datasets import Dataset
@@ -362,17 +320,9 @@ def build_dataset(
 
 
 def align_dataset_to_full_updates(dataset, effective_batch_size: int, seed: int):
-    """Drop the remainder so every optimizer update has ``effective_batch_size`` examples.
+    """Seed-shuffle before dropping chunks to complete optimizer batches.
 
-    When chunks must be dropped, a seeded shuffle runs first so the dropped
-    chunks are a random subset rather than the end of the mixture.
-
-    Returns:
-        ``(dataset, report)``.
-
-    Raises:
-        ValueError: Fewer chunks than one full update.
-    """
+    Return ``(dataset, report)``; reject fewer than one full update."""
     if effective_batch_size < 1:
         raise ValueError("effective_batch_size must be positive")
     original = len(dataset)
@@ -434,16 +384,9 @@ def prepare_training_data(
     split_manifest: Path,
     workers: int = 1,
 ) -> dict:
-    """Pack and cache the training chunks ``train`` would build, without a model.
+    """Build the training cache on CPU, without loading a model.
 
-    Packing can take tens of minutes of single-core time per tokenizer, during
-    which a GPU would sit idle. A CPU job therefore runs this first, with ``workers`` processes. Then
-    ``train(..., require_cache=True)`` on the GPU reads the same cache. Both
-    derive it from ``training_dataset_key``, after the same ``build_validation`` call.
-
-    Returns:
-        ``{"dataset_key", "chunks", "preparation"}`` for the job log.
-    """
+    Return ``{dataset_key, chunks, preparation}``; training reuses the same key."""
     from transformers import AutoTokenizer
 
     from akanlm.data.cpt_splits import build_validation
@@ -472,22 +415,9 @@ def train(
     split_manifest: Path,
     require_cache: bool = False,
 ) -> RunCard:
-    """Run continued pretraining and return a training run card.
+    """Train or explicitly resume CPT and persist ``run_card.json``.
 
-    Args:
-        config: Validated training configuration.
-        output_dir: Directory where checkpoints and logs are written.
-        corpora_dir: Directory containing corpus declarations.
-        mixtures_dir: Directory containing mixture declarations.
-        manifest_sha256: SHA-256 digest of the corpus manifest associated with the run.
-        resume_from_checkpoint: Optional checkpoint path or resume flag passed through to the Trainer.
-        split_manifest: Frozen CPT document split used to supply validation and exclusion metadata.
-        require_cache: Raise :class:`PackingCacheMissing` instead of packing when
-            :func:`prepare_training_data` has not cached this run's training data.
-
-    Returns:
-        RunCard: Structured run metadata returned by the trainer and persisted to ``output_dir/run_card.json``.
-    """
+    Use the frozen split for validation/exclusion; ``require_cache`` forbids on-demand packing."""
     import torch
     from transformers import (
         AutoConfig,
@@ -543,9 +473,7 @@ def train(
         model_config.dropout_rate = config.dropout_rate
     model = AutoModelForSeq2SeqLM.from_pretrained(config.base_checkpoint, config=model_config)
 
-    # MT5Config re-asserts tie_word_embeddings=True on every load, so the flag
-    # must be corrected here too — otherwise the trained checkpoint is saved
-    # with a config that misdescribes its own weights.
+    # Correct MT5Config's tying flag before saving the separate output head.
     if normalize_tying(model):
         raise RuntimeError(
             f"{config.base_checkpoint} loaded with lm_head tied to the embeddings. "
@@ -612,9 +540,7 @@ def train(
         seed=config.seed + state.process_index,
     )
 
-    # Worker processes share the rank's CPU allocation with training. Honor
-    # the explicit worker count, including two workers sharing one core, but
-    # say so when workers outnumber cores: they add prefetch depth, not CPU.
+    # Extra workers add prefetch depth, not CPU allocation.
     available_cpus = len(os.sched_getaffinity(0))
     num_workers = config.dataloader_num_workers
     if num_workers > available_cpus:
@@ -729,9 +655,7 @@ def train(
         tokens_length=tokens_length,
         target_length=target_length,
         effective_batch_size=config.effective_batch_size,
-        # Mesh's ``tokens_per_batch`` uses max(inputs, targets), i.e. the
-        # 1,024-slot encoder allocation. Keep the historical field as that
-        # Google-compatible quantity and record raw/decoder counts separately.
+        # Mesh counts max(inputs, targets) slots; record raw/decoder budgets separately.
         tokens_per_step=config.effective_batch_size * config.input_length,
         raw_tokens_per_step=config.effective_batch_size * tokens_length,
         target_capacity_per_step=config.effective_batch_size * target_length,

@@ -1,10 +1,7 @@
-"""Google's token-span denoising metrics, applied to pinned held-out Twi.
+"""T5 token-span corruption and Mesh metrics on pinned held-out Twi.
 
-References: T5 data.preprocessors.span_corruption and Mesh transformer.utils
-simple_metrics. NumPy samples the masks; identical frozen tasks are reused for
-each tokenizer cohort. This does not reproduce TensorFlow's random bit stream
-or Google's original mC4 corpus. Native perplexity comparisons require the
-same tokenizer AND task fingerprint.
+NumPy masks are frozen per tokenizer cohort; TensorFlow randomness and mC4 are
+not reproduced. Compare perplexity only for identical tokenizers and tasks.
 """
 
 import hashlib
@@ -37,11 +34,9 @@ class DenoisingConfig:
 
     @classmethod
     def from_training(cls, config):
-        """Evaluation tasks with the training run's corruption and sequence allocation.
+        """Read sequence capacities and corruption settings from the training config.
 
-        Validation and test must see the same inputs/targets capacity (Google:
-        1024/256), noise density and span length as training, so these are read
-        from the training config rather than restated here.
+        Validation and test use training capacities, noise density, and span length.
         """
         return cls(input_length=config.input_length, target_length=config.target_length,
                    noise_density=config.noise_density,
@@ -63,10 +58,8 @@ def tokenizer_fingerprint(tokenizer):
 
 def build_tasks(texts, tokenizer, config=DEFAULT_DENOISING_CONFIG):
     """Select <=64K/document, concatenate 128 documents, split, corrupt, pad.
-
-    Preserve each concatenation group's short final segment, as T5 does.
-    EOS is added after corruption, never between source documents. No text is
-    repeated to manufacture 10,000 examples from a smaller held-out corpus.
+    Retain short final segments; add EOS after corruption, not between
+    documents. Never repeat text to reach the example cap.
     """
     if config.max_examples < 1 or config.concatenate_documents < 1 or config.max_document_tokens < 2:
         raise ValueError("Invalid evaluation limits")
@@ -75,8 +68,7 @@ def build_tasks(texts, tokenizer, config=DEFAULT_DENOISING_CONFIG):
         noise_density=config.noise_density, mean_noise_span_length=config.mean_noise_span_length,
         seed=config.seed)
     chunk_rng, mask_rng = [np.random.default_rng(s) for s in np.random.SeedSequence(config.seed).spawn(2)]
-    # Read once per call: len(tokenizer) takes ~4 ms on transformers 5.16, and
-    # evaluating it per token made the M1 validation split an estimated 53 hours.
+    # Cache vocabulary size: len(tokenizer) costs ~4 ms on transformers 5.16.
     from akanlm.tokenizer.special_tokens import resolve_sentinel_ids
 
     vocabulary_size, pad = len(tokenizer), tokenizer.pad_token_id

@@ -1,26 +1,4 @@
-"""Command-line entry point for the AkanT5 pipeline.
-
-Mirrors the ``kgmod`` CLI conventions of the parent repository: a Typer app,
-sub-apps per stage, and all paths relative to the project root.
-
-The pipeline runs in this order, and each step is checkable before the next:
-
-.. code-block:: text
-
-    audit manifest      corpus provenance, sizes, hashes
-    audit decontaminate n-gram ledger against held-out sets
-    tokenizer train     SentencePiece over Twi + English replay
-    tokenizer analyze   fertility vs mT5 and afri-mT5
-    model surgery       swap mT5's vocabulary for ours
-    cpt-split           80/10/10 corpus document holdouts, reusable across sizes
-    cpt                 pre-CPT scores, paired continued pretraining, reference evaluation
-    eval cpt            regenerate the corpus validation/test report
-    eval mt             downstream MT probe on MAFAND and FLORES+ (stop-step v3)
-    eval mt-freeze      write the frozen best-dev MT protocol for a study
-    eval mt-select      learning-rate selection on development data
-    eval mt-test        seeded test runs at the selected learning rate
-    eval mt-report      seed means and paired bootstrap over a study
-"""
+"""CLI for corpus preparation, tokenization, CPT, and evaluation."""
 
 from __future__ import annotations
 
@@ -28,15 +6,7 @@ import json
 import os
 from pathlib import Path
 
-# AKANLM_ALLOW_NETWORK=1 lets a command reach the Hub even in an environment
-# that already exports HF_HUB_OFFLINE=1 (for example, a job script that keeps
-# compute nodes offline by default). Without this override, such a command
-# would fail with an offline cache miss although downloading was requested.
-#
-# huggingface_hub.constants and datasets.config both read HF_HUB_OFFLINE once,
-# at import. This runs before either is imported (every Hub-touching import in
-# this module is deliberately lazy, inside the command functions), so setting
-# it here is what makes the override effective.
+# Override offline mode before Hub/datasets imports cache the environment.
 if os.environ.get("AKANLM_ALLOW_NETWORK") == "1":
     os.environ["HF_HUB_OFFLINE"] = "0"
 
@@ -65,21 +35,14 @@ LANGUAGE_CONFIG = Path("configs/languages/akan.json")
 EVAL_DIR = RUNS_ROOT / "eval"
 
 def eval_report_path(kind: str, subjects: list[str]) -> Path:
-    """Default destination for an eval report: ``runs/eval/<kind>_<run>_<stamp>``.
-
-    The run name is in the filename because reports are produced per CPT
-    mixture; a timestamp alone leaves a directory of reports in which nothing
-    says which mixture produced which numbers.
-    """
+    """Default report path: ``runs/eval/<kind>_<run>_<stamp>``."""
     from datetime import datetime
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return EVAL_DIR / f"{kind}_{run_label(subjects)}_{stamp}.json"
 
 
-# ---------------------------------------------------------------------------
 # audit
-# ---------------------------------------------------------------------------
 
 
 @audit_app.command("sources")
@@ -139,9 +102,7 @@ def audit_manifest(
 
     stats = {}
     for name, source in targets.items():
-        # hf_files sources (including the mC4 English replay) are always read from
-        # their local extraction. Wikipedia is the sole replay source that is
-        # intentionally streamed from the Hub.
+        # hf_files sources use local extractions; Wikipedia replay is streamed.
         streaming = source.hf_files is None and name == "english_replay_wikipedia"
         cap = caps.get(name)
         rows = limit if limit is not None else (cap.rows if cap else None)
@@ -194,12 +155,7 @@ def audit_decontaminate(
 
     sources = load_sources(corpora_dir)
 
-    # Sweep exactly what training will read: the mixtures already declare how
-    # much of each source is consumed, so a source used by no mixture is skipped
-    # and one capped by every mixture is capped here too. A single global
-    # --limit cannot express this — it would truncate pristine_twi_english to
-    # the same row count as the English replay buffer and silently under-report
-    # contamination across the bulk of the Twi corpus.
+    # Audit each source's training cap; a global row limit undercounts Twi overlap.
     caps = derive_source_caps(load_all(mixtures_dir))
     typer.echo("training rows to sweep (derived from mixtures):")
     for name, source in sorted(sources.items()):
@@ -272,9 +228,7 @@ def audit_decontaminate(
     typer.echo(f"\nheld-out items matched at least once: {len(ledger.eval_items_hit)}")
 
 
-# ---------------------------------------------------------------------------
 # tokenizer
-# ---------------------------------------------------------------------------
 
 
 @tokenizer_app.command("train")
@@ -321,11 +275,7 @@ def tokenizer_analyze(
         None, help="Defaults to runs/eval/tokenizer_<run>_<timestamp>.json."
     ),
 ) -> None:
-    """Compare tokenizers on Twi and English fertility.
-
-    Pass ``google/mt5-base`` and ``masakhane/afri-mt5-base`` alongside a local
-    tokenizer to reproduce the baseline comparison.
-    """
+    """Compare Twi/English fertility; include mT5 and Afri-mT5 for baselines."""
     from akanlm.audit.sources import load_sources
     from akanlm.corpora.loaders import load_texts
     from akanlm.tokenizer.analyze import compare, render_table
@@ -341,9 +291,7 @@ def tokenizer_analyze(
             streaming=sources[english_source].hf_files is None,
         )
     ]
-    # Twi Wikipedia is in the tokenizer training pool, which favours larger
-    # vocabularies. FLORES+ dev is held out from tokenizer training and is not
-    # the devtest split used for evaluation.
+    # FLORES+ dev is outside tokenizer training and distinct from devtest.
     heldout = {
         f"twi_{name.removeprefix('flores_plus_')}_flores_dev": [
             r.text for r in load_texts(sources[name].model_copy(update={"hf_split": "dev"}))
@@ -370,9 +318,7 @@ def tokenizer_analyze(
     typer.echo(f"\nwrote {destination}")
 
 
-# ---------------------------------------------------------------------------
 # model
-# ---------------------------------------------------------------------------
 
 
 @model_app.command("surgery")
@@ -403,9 +349,7 @@ def model_surgery(
     typer.echo(f"  span-corruption loss {loss:.4f} (below uniform ln(V))")
 
 
-# ---------------------------------------------------------------------------
 # continued pretraining
-# ---------------------------------------------------------------------------
 
 
 @model_app.command("extend")
@@ -464,12 +408,10 @@ def cpt_experiment(
     prepare_only: bool = typer.Option(False, help="Freeze full-source holdouts and pack the single-arm cache on CPU."),
     workers: int = typer.Option(4, min=1, help="CPU workers for --prepare-only."),
 ) -> None:
-    """CPT with full-mixture holdouts: single-vocabulary or paired-reference training.
+    """Run single-arm CPT or the paired original-tokenizer comparison.
 
-    --single-arm --prepare-only freezes all-source holdouts and packs data on
-    CPU. --single-arm trains from that cache and supports --resume. Omitting
-    --single-arm retains the paired original-tokenizer reference experiment.
-    """
+    ``--single-arm --prepare-only`` freezes splits and packs on CPU;
+    ``--single-arm --resume`` resumes from the cache."""
     from dataclasses import replace
 
     from akanlm.data.cpt_splits import SplitConfig
@@ -546,9 +488,7 @@ def cpt_experiment(
     typer.echo(f"Completed paired CPT experiment: {destination}")
 
 
-# ---------------------------------------------------------------------------
 # eval
-# ---------------------------------------------------------------------------
 
 
 @eval_app.command("cpt")
@@ -613,17 +553,10 @@ def eval_mt(
     ),
     limit: int | None = typer.Option(None, help="Cap evaluation sentences, for a smoke run."),
 ) -> None:
-    """MT probe: fine-tune on MAFAND or local JSONL, then score FLORES+ and MAFAND test.
+    """Fine-tune on MAFAND or local JSONL and score FLORES+/MAFAND.
 
-    Every system gets the same training cap, early-stopping policy and decoding
-    budget through one shared ProbeConfig. Validation loss stops training;
-    scoring reloads the model saved at that stopping step or the cap.
-    Akuapem and Asante are reported side by side and never averaged.
-
-    chrF++ is primary and sacreBLEU secondary. This is the historical
-    stop-step protocol; the frozen best-dev protocol is ``eval mt-freeze``,
-    ``eval mt-select`` and ``eval mt-test``.
-    """
+    Historical stop-step protocol; use ``eval mt-freeze`` for best-dev selection.
+    Report Akuapem/Asante separately, with chrF++ primary and BLEU secondary."""
     from akanlm.audit.sources import load_sources
     from akanlm.corpora.loaders import load_pairs
     from akanlm.eval.baselines import comparison_checkpoints
@@ -717,9 +650,7 @@ def eval_mt(
     results = []
     training_runs = []
     for checkpoint in systems:
-        # Not Path(checkpoint).name: every run's leaf is "final", so the
-        # probe's per-system directories and report rows would collide
-        # across mixtures.
+        # Include the run name: generic leaves such as "final" collide.
         system = run_label([checkpoint])
         fine_tune_dir = system_dir(output_dir, system, direction)
         model, tokenizer = finetune(
@@ -758,13 +689,7 @@ def eval_mt_freeze(
         None, help="Fine-tuning dropout for every system (0 <= rate < 1); frozen in the study."
     ),
 ) -> None:
-    """Freeze the best-dev MT protocol for a study and register its systems.
-
-    Runs the preflight on training and development text only: deduplication
-    against development and test text, the 256/512 length rule, tokenizer
-    coverage and the normalization guard. Rerunning with more checkpoints
-    registers them under the existing protocol.
-    """
+    """Audit training/development data and register systems under immutable MT settings."""
     from akanlm.eval.baselines import comparison_checkpoints
     from akanlm.eval.mt_protocol import freeze, local_task_spec, twi_task_spec
 

@@ -5,19 +5,9 @@ from pathlib import Path
 
 
 def restore_sentencepiece_byte_fallback(tokenizer, spiece_path: str | Path) -> bool:
-    """Restore native byte encoding/decoding without changing vocabulary IDs.
+    """Restore native byte fallback without changing IDs or other tokenizer rules.
 
-    Transformers 5.16's T5 tokenizer conversion disables byte fallback even
-    when the source SentencePiece model enables it. The byte pieces survive,
-    but unfamiliar characters become UNK. Read the original model's setting
-    and verify its byte-piece IDs before correcting the serialized backend.
-
-    The caller must save through a generic ``PreTrainedTokenizerFast`` wrapper
-    (reloading ``T5Tokenizer`` repeats the faulty conversion) and invalidate
-    caches keyed by the previous fingerprint. Existing text normalization,
-    pre-tokenization, special tokens, and vocabulary rows are preserved.
-    Return whether changed.
-    """
+    Save with PreTrainedTokenizerFast and invalidate old fingerprints; return whether changed."""
     from sentencepiece import sentencepiece_model_pb2
     from tokenizers import Tokenizer
 

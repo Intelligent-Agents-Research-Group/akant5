@@ -13,12 +13,9 @@ from akanlm.utils.paths import digest, file_sha256
 
 
 class TrainingPartitionIterator(CharacterBudgetIterator):
-    """Filter and deduplicate in source order, then interleave exact quotas.
+    """Deduplicate in source order, then interleave exact training-only quotas.
 
-    Only the source prefix needed to fill each quota is read. Selected pieces
-    are staged on disk so duplicate ownership follows declared source order,
-    independently of the randomized interleaving passed to SentencePiece.
-    """
+    Read only needed prefixes; stage selections on disk to preserve duplicate ownership."""
 
     def __init__(self, config, sources, manifest, manifest_path, guard):
         budgets = character_quotas(config)

@@ -1,9 +1,4 @@
-"""Strict source coverage checks for a full-mixture CPT run.
-
-Pilot comparisons may intentionally evaluate a common subset of their training
-sources. These checks are opt-in for a full run, whose frozen validation and
-test splits must instead cover every source and consumption mode.
-"""
+"""Require every source/mode in full-run validation and test splits."""
 
 from collections import Counter
 from dataclasses import asdict
@@ -14,13 +9,9 @@ from akanlm.data.mixture import MixtureConfig
 def validate_full_source_coverage(
     mixture: MixtureConfig, manifest: dict, native_validation: dict | None = None,
 ) -> dict:
-    """Verify a full-mixture split and optionally its native validation report.
+    """Check a hash-validated split and optional native validation report.
 
-    ``manifest`` must already have passed ``read_manifest`` hash validation.
-    Count records directly without copying their text or rebuilding tokenized
-    tasks. Training counts are candidates before the final exclusion filter;
-    the packing report remains the authority on retained training data.
-    """
+    Training counts precede exclusion; packing determines retained training data."""
     if not mixture.components:
         raise ValueError("Full-source coverage requires a nonempty mixture")
     expected_components = [asdict(component) for component in mixture.components]
@@ -118,13 +109,10 @@ def validate_full_source_coverage(
 
 
 def validate_character_tokenization(manifest: dict, tokenizer, char_config=None) -> dict:
-    """Exercise the real character scorer's encoding guards on CPU.
+    """Check scorer tokenization on CPU without loading model weights.
 
-    Select the same documents and character masks as ``score_corpora``. A
-    stand-in receives the validated batches, avoiding any model-weight load.
-    Its zero loss is only an implementation aid: no model metrics are returned
-    or written. The caller must verify full-mixture coverage separately.
-    """
+    Use identical documents/masks; dummy loss is not a model metric.
+    Check full-mixture coverage separately."""
     from types import SimpleNamespace
 
     import torch

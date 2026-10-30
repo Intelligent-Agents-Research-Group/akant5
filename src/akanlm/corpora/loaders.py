@@ -1,18 +1,6 @@
-"""Load declared corpora into normalized text.
+"""Load pinned corpus declarations into normalized text.
 
-A single generic loader is driven by the :class:`~akanlm.audit.sources.CorpusSource`
-declaration — the YAML already names the dataset, revision, config, split and
-columns, so per-source loader modules would only restate it. Sources needing
-genuinely different mechanics are registered in :data:`SPECIAL_LOADERS`.
-
-Only one such special case exists today: ``masakhane/mafand`` is a script-based
-dataset whose repository contains nothing but ``mafand.py``. Modern ``datasets``
-releases no longer execute loading scripts, so MAFAND is read from the
-auto-converted parquet branch instead.
-
-A source declaring ``hf_files`` is read from its local extraction
-(:mod:`akanlm.corpora.extract`) and never from the Hub at load time.
-"""
+MAFAND uses converted parquet; ``hf_files`` sources use local extractions."""
 
 from __future__ import annotations
 
@@ -78,20 +66,9 @@ def _hf_load(source: CorpusSource, streaming: bool = False):
 
 
 def _assert_pinned_revision(source: CorpusSource, dataset, streaming: bool) -> None:
-    """Fail loudly if the build we got back is not the pinned revision.
+    """Reject cached builds whose path does not match the pinned revision.
 
-    Under ``HF_HUB_OFFLINE=1`` ``datasets`` does not honour ``revision=``: it
-    falls back to the ``Cache`` module, which selects the *most recently
-    modified* cached build for the config and logs it only at WARNING. Passing a
-    revision that does not exist at all still returns rows. Verified directly —
-    a nonexistent ``DEADBEEF...`` revision returned the 1012-row
-    ``5fec6c13...`` build without error.
-
-    That silence is the danger: the manifest hash bound into each run card is
-    only meaningful if the bytes actually came from the pinned commit. The
-    cached build's path carries the revision it was built from, so check it
-    rather than trust it.
-    """
+    Offline datasets may silently select a different cached revision."""
     if not source.hf_revision or streaming:
         return
     cache_files = getattr(dataset, "cache_files", None)
@@ -109,24 +86,13 @@ def _assert_pinned_revision(source: CorpusSource, dataset, streaming: bool) -> N
 
 
 def _load_mafand(source: CorpusSource, streaming: bool = False):
-    """Read MAFAND from the auto-converted parquet branch.
-
-    ``masakhane/mafand`` ships only a loading script, which ``datasets`` will
-    not run. The parquet conversion at ``refs/convert/parquet`` carries the
-    same rows under ``<config>/<split>/*.parquet``.
-    """
+    """Read pinned converted MAFAND parquet because datasets no longer executes its script."""
     from datasets import load_dataset
 
     config = source.hf_config or "en-twi"
     split = source.hf_split
 
-    # Resolve against the pinned parquet-branch SHA, never the branch name.
-    # refs/convert/parquet is mutable — the Hub regenerates it whenever the
-    # source dataset changes — so listing it by name leaves MAFAND the one
-    # source whose file set is decided at load time rather than pinned, which
-    # would quietly move the manifest hash bound into every run card. Listing a
-    # branch name is also an uncacheable live API call, so it is the one thing
-    # that cannot run offline even with a complete cache.
+    # Pin the parquet commit: branch listings are mutable and require network access.
     revision = source.hf_parquet_revision
     if not revision:
         raise ValueError(
@@ -151,21 +117,9 @@ def _load_mafand(source: CorpusSource, streaming: bool = False):
 def _mafand_data_files(
     source: CorpusSource, revision: str, config: str, split: str
 ) -> list[str]:
-    """``data_files`` for the pinned parquet shards, from local cache when possible.
+    """Prefer pinned local shard paths to avoid Hub listing and URL resolution.
 
-    Two separate things reach for the network here, and both must be avoided for
-    a cached MAFAND to join an offline audit: ``list_repo_files`` is a live API
-    call ``huggingface_hub`` does not cache, and an ``hf://`` URL is resolved
-    through the Hub even when the bytes are already downloaded. So when the hub
-    snapshot for *revision* is on disk, hand ``load_dataset`` ordinary local
-    paths and neither happens.
-
-    The snapshot directory is named by the commit SHA, so reading it is exactly
-    as pinned as asking the Hub. Caveat worth stating plainly: a *partially*
-    downloaded snapshot lists fewer shards with no local signal that it is
-    short. ``expected_rows`` in the source YAML is the backstop, recorded beside
-    the measured count in the manifest.
-    """
+    Partial snapshots may omit shards; the manifest records measured/expected row counts."""
     from huggingface_hub.constants import HF_HUB_CACHE
     from huggingface_hub.file_download import repo_folder_name
 
@@ -249,13 +203,7 @@ def _looks_gated(error: Exception) -> bool:
 
 
 def _looks_offline(error: Exception) -> bool:
-    """Offline mode refused, or refused to find a cache entry.
-
-    Both spellings matter: huggingface_hub raises OfflineModeIsEnabled for a
-    blocked request, while datasets raises a bare ValueError from its Cache
-    module when the config was never downloaded. Neither message mentions
-    AKANLM_ALLOW_NETWORK, which is the only knob a user of this repo has.
-    """
+    """Recognize Hub-offline and missing cached dataset errors."""
     text = str(error).lower()
     return (
         "offline mode is enabled" in text
@@ -284,37 +232,11 @@ def load_texts(
     max_chars: int | None = None,
     pool: "OrderedPool | None" = None,
 ) -> Iterator[TextRecord]:
-    """Yield normalized documents from *source*, target language only.
+    """Yield normalized target-side documents in dataset order.
 
-    A **parallel** source is accepted here and yields its ``text_column`` — the
-    Akan side — discarding the other language. That is how the synthetic Twi
-    monolingual stream is drawn: ``pristine-twi-english`` is the project's only
-    Ghana NLP synthetic source, and M1/M2 take its Twi column while M3
-    additionally takes it as pairs via :func:`load_pairs`.
-
-    Args:
-        source: Validated corpus declaration.
-        limit: Stop after this many yielded records.
-        streaming: Stream instead of materialising. Required for C4 and
-            English Wikipedia, which are far too large to download whole.
-        min_chars: Drop documents shorter than this after normalization.
-        max_chars: Stop once this many normalized characters have been yielded.
-            Prefer this to *limit* whenever the intent is a volume budget: a row
-            cap is only a proxy for one, and an unstable proxy when document
-            length varies. English Wikipedia in streaming order averages 30,664
-            chars over its first 200 articles, 4,910 over its first 69,000 and
-            3,036 across all 6.4M — so a row cap chosen from any sample of the
-            front misses its intended volume by multiples. The last document is
-            emitted whole rather than truncated, so the budget is a floor.
-        pool: Normalize rows in this pool's worker processes. Records still
-            arrive in dataset order, and the budgets are applied here, so the
-            output is the same as without a pool.
-    Yields:
-        :class:`TextRecord` in dataset order.
-    Raises:
-        ValueError: If the source ends before *max_chars*; a shortfall would
-            silently change the mixture's declared composition.
-    """
+    Budgets apply after filtering/normalization, including with workers. Keep the
+    last document whole; reject sources that cannot meet ``max_chars``.
+    Parallel sources yield ``text_column``; use ``load_pairs`` for both sides."""
     from akanlm.utils.parallel import OrderedPool
 
     normalize_row = partial(_text_record, source=source, rules=source.effective_rules(), min_chars=min_chars)
@@ -367,16 +289,9 @@ def load_pairs(
     max_chars: int | None = None,
     pool: "OrderedPool | None" = None,
 ) -> Iterator[PairRecord]:
-    """Yield normalized translation pairs from *source*.
+    """Yield normalized translation pairs; reject nonparallel sources.
 
-    The target-language side is normalized with the source's Akan rules; the
-    English side gets shared cleanup without Akan letter substitutions or
-    synthetic speaker/Markdown stripping. *pool* normalizes in worker
-    processes, as in :func:`load_texts`.
-
-    Raises:
-        ValueError: If *source* is not parallel.
-    """
+    Apply Akan rules to targets and shared cleanup to English; workers preserve order."""
     if source.modality is not Modality.PARALLEL:
         raise ValueError(f"{source.name} is {source.modality.value}, not parallel")
 

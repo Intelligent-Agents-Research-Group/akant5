@@ -1,19 +1,6 @@
-"""Text normalization for Akan/Twi and English corpora.
+"""Normalize Akan/Twi and English with ordered pure string rules.
 
-Design contract
----------------
-Every rule is a pure ``str -> str`` function registered in :data:`RULES`.
-:func:`normalize` applies a named subset and returns both the result and a
-:class:`NormalizationReport` naming every rule that actually changed the
-string. Nothing that alters token counts happens silently: if a rule fires,
-it is in the report, and the report is what the corpus manifest records.
-
-The confusable table matters more than it looks. Akan keyboards are scarce,
-so ``ɛ`` (U+025B) and ``ɔ`` (U+0254) are routinely typed as Greek epsilon,
-small-capital open O, reversed lunate sigma, and similar lookalikes. Left
-alone, each variant becomes its own tokenizer entry and the same word ends
-up with several unrelated embeddings.
-"""
+Report every rule that changes text, including ɛ/ɔ confusable mapping."""
 
 from __future__ import annotations
 
@@ -138,12 +125,7 @@ def rule_strip_zero_width(text: str) -> str:
 
 
 def rule_nfc(text: str) -> str:
-    """Apply Unicode NFC.
-
-    Note that ``ɛ́`` and ``ɔ́`` have no precomposed code point, so they
-    legitimately remain a base letter plus U+0301 after NFC. That is the
-    canonical form and the tokenizer must be built to expect it.
-    """
+    """Apply NFC; ɛ́/ɔ́ retain combining accents because no precomposed forms exist."""
     return unicodedata.normalize("NFC", text)
 
 
@@ -306,16 +288,7 @@ def normalize(
     text: str,
     rules: Sequence[str] = DEFAULT_RULES,
 ) -> tuple[str, NormalizationReport]:
-    """Apply named rules in order, recording the ones that changed the text.
-
-    Args:
-        text: Input string.
-        rules: Rule names, applied in the given order. Unknown names raise.
-    Returns:
-        ``(normalized_text, report)``.
-    Raises:
-        KeyError: If a rule name is not registered in :data:`RULES`.
-    """
+    """Apply named rules in order; return ``(text, report)`` and reject unknown names."""
     report = NormalizationReport(chars_before=len(text))
     current = text
     for name in rules:

@@ -47,23 +47,12 @@ def partition(text, config=DEFAULT_SPLIT_CONFIG):
 
 
 def prepare(mixture, corpora_dir, output, config=DEFAULT_SPLIT_CONFIG):
-    """Prepare a frozen CPT split manifest for held-out source records.
+    """Freeze source-ordered, deduplicated document splits.
 
-    The manifest is built from component order using the same
-    :class:`~akanlm.data.mixture.ExactDuplicates` policy as training, so each
-    text is attributed to the same source consistently. Parallel translations
-    remain paired with their Twi record. Validation examples that share either
-    language verbatim with test records are dropped, and training excludes any
-    occurrence of either language from held-out records. Evaluation records are
-    not repeated or oversampled, and downstream test sets are exclusion-only.
-
-    Notes:
-        - Every parallel side is added to the exclusion set before duplicate
-          targets are removed, preventing an alternate translation from
-          escaping the manifest.
-        - The opposing language is retained for evaluation only when a
-          component consumes that source as a parallel pair.
-    """
+    Keep translations paired; protect both sides before deduplicating targets.
+    Drop validation records overlapping test; exclude held-out sides from training.
+    Do not oversample evaluation data; downstream tests are exclusion-only.
+    Retain the other language for evaluation only when consumed as pairs."""
     from akanlm.audit.sources import Modality, assert_trainable, load_sources
     from akanlm.corpora.loaders import load_pairs, load_texts
     from akanlm.data.mixture import ExactDuplicates, derive_source_caps, validate
@@ -176,12 +165,9 @@ class TrainingFilter:
         return self.record(source, self.check(target, *others))
 
     def check(self, target, *others):
-        """Decide without counting, so worker processes can call it.
+        """Return None for nontraining/held-out records, else the downstream guard outcome.
 
-        Returns ``None`` when the record is outside the train partition or matches
-        a held-out key, since the downstream guard is then never consulted.
-        Otherwise it returns the downstream guard's own outcome.
-        """
+        Do not update counters, so workers can call this method."""
         if (partition(target, self.config) != "train"
                 or any(content_key(t) in self.keys for t in (target, *others))):
             return None

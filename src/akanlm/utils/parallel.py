@@ -1,12 +1,4 @@
-"""Order-preserving process pool for CPU-bound corpus preparation.
-
-CPython executes Python bytecode in one thread at a time, so text
-normalization, the exclusion guard's n-gram scan and per-document tokenizer
-calls use more than one core only in separate processes. Results come back in
-input order, so the stateful steps applied to them in the calling process
-(character budgets, filter counts, first-seen deduplication, packing) see the
-same sequence as a serial run.
-"""
+"""Bounded process pool with serial-equivalent input/output ordering."""
 
 from __future__ import annotations
 
@@ -29,18 +21,10 @@ def _apply(fn: Callable, batch: list) -> list:
 
 
 class OrderedPool:
-    """Apply ``fn(shared, item)`` to a stream in worker processes, in input order.
+    """Map ``fn(shared, item)`` in input order; workers must not mutate shared state.
 
-    ``shared`` is read-only state, such as an exclusion index and a tokenizer,
-    pickled once per worker at start-up. ``fn`` must be a module-level function
-    or a ``functools.partial`` of one. It is pickled with every batch, so it
-    should bind only small arguments. Workers never return state to the caller,
-    so ``fn`` must not rely on mutating ``shared``.
-
-    At most ``2 * workers`` batches are outstanding at a time. That bounds
-    memory, and the work wasted when a consumer stops early. With
-    ``workers <= 1``, items are processed lazily in the calling process.
-    """
+    Use a module-level function or partial with small bound arguments.
+    Keep at most ``2 * workers`` batches pending; ``workers <= 1`` runs lazily in-process."""
 
     def __init__(self, shared: Any = None, workers: int = 1, batch_size: int = 64) -> None:
         self.shared = shared

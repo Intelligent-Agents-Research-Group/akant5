@@ -1,14 +1,8 @@
-"""Tokenizer-independent conditional BPC on CPT document holdouts.
+"""Conditional BPC on shared character masks of CPT document holdouts.
 
-Google's token-span procedure (eval/denoising.py) masks tokens, so each
-tokenizer receives a different task and native perplexity cannot rank AkanT5
-against Google mT5. This protocol masks Unicode characters before tokenization
-(eval/lm.py, char_span_v1), so every system reconstructs the same masked text
-from the same held-out documents. Bits per masked character is then comparable
-across tokenizers; per-token loss still is not.
-
-It is conditional denoising cost, not full-text BPC, and it is not a translation
-metric. FLORES+ and MAFAND remain downstream probes.
+``char_span_v1`` masks Unicode characters before tokenization, enabling
+cross-tokenizer comparison. Per-token loss remains incomparable. This measures
+conditional denoising cost, not full-text BPC or translation quality.
 """
 
 import math
@@ -25,19 +19,16 @@ PROTOCOL = "corpus_char_span_v1"
 
 @dataclass(frozen=True)
 class CharSpanConfig:
-    # On the Twi held-out documents, 1,024 characters reach at most 677 mT5
-    # encoder tokens, inside the 1,024-token limit, so no window is truncated. Longer windows remove the 128-character suffix artifact.
+# Twi holdouts use at most 677 mT5 tokens per 1,024-character window;
+# this avoids truncation and the 128-character suffix artifact.
     max_chars: int = 1024
     noise_density: float = 0.15
     mean_span_chars: float = 12.0
     token_length_limit: int = 1024
-    # Same cap as the token-span protocol's max_examples. A 10% Pristine split
-    # holds ~134M characters; 10,000 windows score ~10M of them. Whole documents
-    # are taken in manifest order, whose four Pristine styles alternate row by
-    # row.
+# Match the token-span cap: ~10M of Pristine's ~134M held-out characters.
+# Manifest order alternates four Pristine styles; preserve whole documents.
     max_windows: int = 10000
-    # About 1.5M masked characters per capped split make mask-placement
-    # variance small relative to document sampling, which the bootstrap covers.
+# ~1.5M masked characters reduce mask variance; bootstrap resamples documents.
     seeds: tuple[int, ...] = (20260910,)
     bootstrap_samples: int = 2000
     bootstrap_seed: int = 13
@@ -95,11 +86,9 @@ def score_corpora(model, tokenizer, corpora, name, *, config=DEFAULT_CHAR_SPAN_C
 
 
 def compare(candidate, baseline, *, samples=2000, seed=13):
-    """Paired document bootstrap of the BPC reduction, candidate against baseline.
+    """Bootstrap candidate BPC reduction over paired documents with shared masks.
 
-    Both rows must carry the same masked text; only then is a per-character
-    difference meaningful between tokenizers. The interval is conditional on
-    the mask seeds and on one training run per system.
+    Intervals condition on the mask seeds and one training run per system.
     """
     for key in ("protocol", "config", "split", "dataset", "corpus", "split_manifest_sha256"):
         if candidate[key] != baseline[key]:

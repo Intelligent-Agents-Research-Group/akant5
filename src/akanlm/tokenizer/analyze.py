@@ -1,41 +1,7 @@
-"""Compare tokenizers on Twi and English.
+"""Compare Twi/English tokenizers on CPU.
 
-This is a CPU-only diagnostic that runs before any GPU time is spent, and it
-answers two questions the project depends on:
-
-1. **Which vocabulary size to train.** Fertility falls with vocabulary size
-   while embedding parameters rise linearly, and on a single GPU the parameter
-   side is the binding constraint. The sweep makes that trade explicit.
-
-2. **How mT5 and afri-mT5 actually handle Twi.** Observed directly on
-   ``google/mt5-small``, ``ɔfrɛ`` tokenizes as ``▁ ɔ fr ɛ`` — four tokens for a
-   four-character word, with the open vowels stranded as isolated pieces. mT5
-   never saw a Ghanaian language, so this is expected; measuring it turns a
-   claim about tokenizer quality into a number.
-
-Metrics
--------
-``fertility``
-    Tokens per whitespace-delimited word. The headline number.
-
-``tokens_per_char``
-    Length-normalized, so it stays comparable across languages with very
-    different word lengths.
-
-``byte_fallback_rate``
-    Share of tokens that are raw ``<0xXX>`` bytes. High values mean the
-    vocabulary is falling back to bytes rather than representing the language.
-
-``open_vowel_isolation``
-    Share of ``ɛ``/``ɔ`` occurrences that end up as a standalone one-character
-    token instead of inside a real subword. This is the specific mT5 pathology.
-
-``morph_boundary_rate``
-    Share of words beginning with a known Akan prefix (``ɔ-``, ``me-``, ``yɛ-``,
-    ``re-``…) where the tokenizer puts a boundary immediately after the prefix.
-    Higher is better: the grammar graph indexes exactly these morphemes, so a
-    tokenizer that preserves them makes the retrieved rules addressable.
-"""
+Report tokens per word/character, byte-token share, isolated ɛ/ɔ share,
+and prefix-boundary rate among words starting with a configured Akan prefix."""
 
 from __future__ import annotations
 
@@ -96,12 +62,7 @@ class TokenizerStats:
 
     @property
     def open_vowel_isolation(self) -> float | None:
-        """``None`` when there are too few ɛ/ɔ for the ratio to mean anything.
-
-        English samples contain a handful of stray occurrences at most, and a
-        ratio over a denominator of two would otherwise be reported as a hard
-        1.000 next to Twi's real measurement.
-        """
+        """Return None when too few ɛ/ɔ occurrences support a meaningful isolation rate."""
         if self.open_vowel_total < MIN_OPEN_VOWELS:
             return None
         return self.open_vowel_isolated / self.open_vowel_total
@@ -161,18 +122,7 @@ def analyze(
     morph_prefixes: Sequence[str] = (),
     n_examples: int = 5,
 ) -> TokenizerStats:
-    """Measure *tokenizer* over *texts*.
-
-    Args:
-        tokenizer: Any HF tokenizer.
-        texts: Documents to measure.
-        language: Label for the report, e.g. ``"twi"`` or ``"en"``.
-        name: Tokenizer label; defaults to its ``name_or_path``.
-        morph_prefixes: Akan prefixes for the boundary-alignment metric.
-        n_examples: How many tokenized samples to keep for the report.
-    Returns:
-        Populated :class:`TokenizerStats`.
-    """
+    """Return tokenizer statistics and tokenized examples for the supplied texts."""
     stats = TokenizerStats(
         tokenizer=name or getattr(tokenizer, "name_or_path", "unknown"),
         language=language,
@@ -257,16 +207,9 @@ def compare(
     samples: dict[str, Sequence[str]],
     language_config: Path,
 ) -> dict:
-    """Run :func:`analyze` for every tokenizer x language-sample pair.
+    """Return diagnostics for each tokenizer/language pair.
 
-    Args:
-        tokenizers: ``{label: tokenizer}``.
-        samples: ``{language: texts}``; the language keyed ``"twi"`` (or any
-            key starting with ``ak``/``twi``) gets the morphology metric.
-        language_config: Path to ``akan.json``.
-    Returns:
-        A report dict, ready to serialise.
-    """
+    Apply configured morphology prefixes only to Akan/Twi samples."""
     prefixes = load_morph_prefixes(language_config)
     rows: list[dict] = []
 

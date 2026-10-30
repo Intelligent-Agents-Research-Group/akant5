@@ -1,35 +1,8 @@
-"""Translation probe: the head-to-head against ``masakhane/afri-mt5-base``.
+"""MT probes with shared data, budgets, stopping rules, and decoding settings.
 
-Continued pretraining produces a denoising model, not a translator, so a
-downstream probe is needed to show the adaptation bought anything usable. The
-probe fine-tunes each checkpoint on MAFAND ``en-twi`` or a declared local
-English–X JSONL split under an identical step cap and stopping policy, then
-scores held-out test sets (FLORES+ and MAFAND test for Twi). Checkpoint selection uses the chosen split's
-development loss, never the test sets.
-
-Two design points the publication plan requires:
-
-*chrF++ is primary, not BLEU.* Twi is agglutinative and morphologically rich,
-and BLEU's word-level matching punishes correct morphology that differs from
-the reference by an affix. chrF++ operates on character n-grams and is the
-standard choice for African-language MT. sacreBLEU is reported as a secondary,
-reproducible number.
-
-*Two weight-selection protocols.* The probe scores the weights at the step
-where training stopped. The frozen protocol in :mod:`akanlm.eval.mt_protocol`
-sets ``restore_best_dev_loss`` and scores the checkpoint with the lowest
-development loss within the same update budget. Learned metrics such as
-AfriCOMET are not computed.
-
-*Varieties are never pooled.* FLORES+ separates Akuapem (``twi_Latn_akua1239``)
-from Asante (``twi_Latn_asan1239``). Akuapem is the declared primary variety,
-so it is the primary score; Asante is reported beside it as cross-variety
-transfer. Averaging them would hide exactly the effect the plan wants measured.
-
-Every system in a comparison must receive the same fine-tuning step cap and
-stopping policy, the same decoding configuration and the same data. Actual
-training lengths may differ. :class:`ProbeConfig` is shared across systems
-for that reason.
+Select weights by development loss only; score stop-step or best-dev weights.
+Report chrF++ (primary), BLEU, and FLORES+ varieties separately: Akuapem is
+primary; Asante measures transfer. Learned metrics are not computed.
 """
 
 from __future__ import annotations
@@ -47,9 +20,7 @@ from akanlm.utils.paths import ensure_dir
 logger = get_logger(__name__)
 
 
-#: Language codes the probe accepts, with the names used in the task prefix.
-#: Kpelle and Vai are registered ahead of their data so that adding them does
-#: not edit the frozen procedure.
+#: Task-prefix names; preregistered languages preserve the frozen procedure.
 LANGUAGE_NAMES = {"en": "English", "twi": "Twi", "kpe": "Kpelle", "vai": "Vai"}
 
 
@@ -112,18 +83,13 @@ class ProbeConfig:
     seed: int = 13
     gradient_checkpointing: bool = False
     bf16: bool = True
-    # Pad every batch to a multiple of this length. Per-batch padding gives
-    # each step new tensor shapes, and on B200 (torch 2.11+cu128) the first
-    # call at a new shape costs ~1.5 s of host time against 0.6 ms on repeat,
-    # so fine-tuning ran at ~10 s/step. Padding is masked (encoder) or -100
-    # (labels), so losses and decoded outputs are unchanged.
+    # Pad to a multiple to reduce shape overhead on B200; mask added padding.
     pad_to_multiple_of: int = 32
     lr_scheduler_type: str = "linear"
-    # False scores the stop-step weights (the *_stop_step_v3 reports). True
-    # restores the checkpoint with the lowest development loss.
+    # Restore minimum-dev-loss weights; False retains stop-step weights.
     restore_best_dev_loss: bool = False
-    # None retains the checkpoint's configuration; an explicit value is
-    # applied before constructing dropout modules and never rewrites the source.
+    # None preserves checkpoint dropout; apply overrides before construction
+    # without changing source artifacts.
     dropout_rate: float | None = None
 
     @classmethod
@@ -227,11 +193,7 @@ def score(
     direction: str,
     variety: str | None = None,
 ) -> MTResult:
-    """Compute chrF++ and sacreBLEU.
-
-    Raises:
-        ValueError: On a length mismatch, which silently wrecks MT metrics.
-    """
+    """Compute chrF++ and sacreBLEU; reject unequal prediction/reference counts."""
     import sacrebleu
 
     if len(hypotheses) != len(references):
@@ -287,25 +249,9 @@ def load_flores_pairs(
 def load_flores_items(
     sources: dict, variety: str, limit: int | None = None
 ) -> tuple[list[str], list[str], list[str]]:
-    """English/Twi sentence pairs from FLORES+ for one variety.
-
-    FLORES+ ships one monolingual config per language, so the parallel pair
-    has to be reassembled from ``eng_Latn`` and ``twi_Latn_<glottocode>``. The
-    configs are sentence-parallel by row and carry a shared ``id``, which is
-    checked here rather than trusted: a drifted pairing does not fail, it just
-    scores a different sentence against each reference and produces a
-    believable number.
-
-    Args:
-        sources: Loaded ``CorpusSource`` objects by name.
-        variety: ``akuapem`` or ``asante``.
-        limit: Cap on sentences, for a smoke run.
-
-    Returns:
-        ``(english, twi, ids)``, aligned; ``ids`` are the FLORES+ sentence ids.
-
-    Raises:
-        ValueError: If the two configs disagree on ids or length.
+    """Return aligned ``(english, twi, ids)`` for Akuapem or Asante FLORES+.
+    Join monolingual configs by row; reject unequal lengths or sentence IDs.
+    ``sources`` maps names to CorpusSource objects; ``limit`` caps smoke runs.
     """
     from akanlm.corpora.loaders import _open
 
@@ -359,12 +305,9 @@ def build_pairs(records, config: ProbeConfig) -> list[dict]:
 
 
 def load_local_jsonl_pairs(path: Path, config: ProbeConfig) -> list[dict]:
-    """Load CompExpress-style translation JSONL for probe fine-tuning.
+    """Load ``translation.<code>`` JSONL using MAFAND probe normalization.
 
-    The non-English column is ``translation.<code>`` (``twi``, ``kpe``,
-    ``vai``). The copied CompExpress en-tw split names its Twi column ``sw``,
-    so that alias is accepted for Twi only. Both languages are normalized
-    through the same path as the MAFAND probe.
+    Accept CompExpress's ``sw`` column as an alias for Twi only.
     """
     from akanlm.corpora.normalize import normalize_for_language
 
@@ -430,15 +373,9 @@ def finetune(
     output_dir: Path,
     resume: bool = False,
 ):
-    """Train, save the scored weights, and reload them for held-out scoring.
-
-    The scored weights are the stop-step weights, or, with
-    ``config.restore_best_dev_loss``, the checkpoint with the strictly lowest
-    development loss (first occurrence). Transformers saves a checkpoint only
-    at a new best (``save_strategy="best"``), so the latest checkpoint is
-    always the restore target and the resume point. Patience still counts
-    checks without an improvement larger than the threshold, so the restored
-    step and the patience reference step can differ; both are recorded.
+    """Train and reload stop-step or first minimum-dev-loss weights for scoring.
+    Best-only saves supply the restore/resume checkpoint. Thresholded patience
+    may reference a different step; both steps are recorded.
     """
     import torch
     from datasets import Dataset
@@ -528,8 +465,7 @@ def finetune(
             )
         resume_checkpoint = get_last_checkpoint(str(output_dir))
         if resume_checkpoint is None:
-            # Interrupted before the first save: the manifest matched, so a
-            # fresh start is the same experiment.
+            # Matching manifest permits restart before the first save.
             logger.warning("%s: no Trainer checkpoint; restarting the fine-tune", output_dir)
     else:
         ensure_dir(output_dir)
@@ -538,8 +474,7 @@ def finetune(
 
     set_seed(config.seed)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-    # Every probed checkpoint is stored in float32; transformers 5 would
-    # otherwise load in the stored dtype, and bf16 weights change training.
+    # Keep float32 training weights; bf16 storage/loading changes training.
     model_options = {"dtype": torch.float32}
     if config.dropout_rate is not None:
         model_config = AutoConfig.from_pretrained(checkpoint)
@@ -654,20 +589,14 @@ def finetune(
     return scored_model, scored_tokenizer
 
 
-#: Largest accepted gap between the best logged development loss and the loss
-#: of the restored weights re-evaluated after training. bf16 evaluation is not
-#: bit-exact; a different checkpoint differs by more than this.
+#: Restored-vs-logged dev-loss tolerance for non-bit-exact bf16 evaluation.
 RESTORED_LOSS_TOLERANCE = 1e-3
 
 
 def _verify_restored_weights(trainer, scored_model, stop) -> dict:
-    """Check that the scored weights are the lowest-development-loss checkpoint.
+    """Verify the first minimum-dev-loss checkpoint, saved tensors, and loss.
 
-    Raises:
-        RuntimeError: If transformers' best checkpoint is not the first
-            minimum of the logged development losses, if the disk round trip
-            changed any tensor, or if re-evaluating the restored weights does
-            not reproduce the best loss.
+    Raise RuntimeError if checkpoint selection, round-trip weights, or loss differ.
     """
     import torch
 
@@ -722,10 +651,9 @@ def generate(
     device: str | None = None,
     normalize_outputs: bool = True,
 ) -> list[str]:
-    """Decode with a hard decoder-length cap, including the start token.
+    """Decode with a hard length cap including the start token.
 
-    The generation cap is independent of training target truncation. Scoring
-    callers may retain raw output for audit.
+    The cap is independent of training truncation; raw output may be retained.
     """
     import torch
     from akanlm.corpora.normalize import normalize_for_language
@@ -752,8 +680,7 @@ def generate(
             generated = model.generate(
                 **batch,
                 max_length=config.generation_max_length,
-                # A checkpoint's max_new_tokens would otherwise take precedence
-                # over max_length and silently bypass the requested cap.
+    # max_new_tokens would override the requested max_length cap.
                 max_new_tokens=None,
                 num_beams=config.num_beams,
                 early_stopping=config.num_beams > 1,
@@ -764,23 +691,14 @@ def generate(
 
 
 def report_path(output_dir: Path, direction: str) -> Path:
-    """Where a probe of *direction* writes its report.
-
-    The direction is part of the filename, not only a field inside the
-    document, so that both directions can be probed into one output directory
-    without the second run overwriting the first.
-    """
+    """Direction-specific report path, preventing cross-direction overwrites."""
     return output_dir / f"mt_probe_report_{direction}.json"
 
 
 def system_dir(output_dir: Path, system: str, direction: str) -> Path:
-    """Fine-tuning scratch directory for one system in one direction.
+    """Scratch directory per system/direction, including saved weights and state.
 
-    Direction-scoped for the same reason as :func:`report_path`: two probes
-    sharing an output directory otherwise hand the same path to two
-    ``Seq2SeqTrainer`` instances. With early stopping enabled this stores
-    the saved stop-step model; trainer_state.json records completed steps and
-    validation history for every run.
+    ``trainer_state.json`` records steps and validation history.
     """
     return output_dir / f"{system}_{direction}"
 

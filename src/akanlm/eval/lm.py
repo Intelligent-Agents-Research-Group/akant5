@@ -1,13 +1,8 @@
-"""Conditional denoising bits per masked character on shared text tasks.
+"""Conditional denoising BPC on shared Unicode character masks (char_span_v1).
 
-Protocol char_span_v1 constructs document windows and masks in Unicode code
-points BEFORE tokenization. Every tokenizer receives identical source/target
-strings. All windows, including short tails, are scored without truncation.
-The numerator includes target sentinels and EOS; the denominator counts only
-original masked characters, never sentinel spellings or visible context.
-This is conditional denoising cost, not full-text autoregressive BPC. Compare
-only results with identical protocol and task fingerprints. CPT experiments
-apply it to corpus holdouts through eval/corpus_bpc.py.
+Score every document window, including short tails, without truncation. Loss
+includes target sentinels and EOS; divide only by original masked code points.
+This is not autoregressive BPC. Compare identical protocol/task fingerprints.
 """
 
 from __future__ import annotations
@@ -126,11 +121,9 @@ def build_text_tasks(
     mean_span_chars: float = 12.0,
     seed: int = 20260827,
 ) -> list[TextTask]:
-    """Create shared masks without consulting any tokenizer.
+    """Mask Unicode code points within documents, preserving whitespace and tails.
 
-    Windows never cross documents. Character spans may split words. Whitespace
-    is preserved; character counts use Python len (Unicode code points).
-    A one-character tail is fully masked, so no source tail is discarded.
+    Spans may split words; a one-character tail is fully masked.
     """
     import numpy as np
 
@@ -199,11 +192,9 @@ def evaluate(
     max_chars: int = 128,
     document_scores: bool = False,
 ) -> LMResult:
-    """Score shared character-span tasks; reject token overflow, never truncate.
-
-    input_length caps both encoder and target token lengths. If any tokenizer
-    exceeds it, reduce max_chars for ALL compared models and rerun. The token
-    cap is recorded but does not change the underlying text tasks.
+    """Score shared character tasks without truncation.
+    ``input_length`` caps encoder and target tokens, not text tasks. On overflow,
+    reduce ``max_chars`` for every compared model and rerun.
     """
     import torch
 
@@ -218,8 +209,7 @@ def evaluate(
     tasks = build_text_tasks(texts, **config)
     if not tasks:
         raise ValueError("No nonempty evaluation text")
-    # Include original documents as well as exact constructed tasks. Length-
-    # prefixed JSON avoids ambiguous concatenation and catches corpus changes.
+    # Hash documents and tasks using length-prefixed JSON to detect changes.
     digest = hashlib.sha256(
         json.dumps(
             [PROTOCOL, config, list(texts), [(t.source, t.target) for t in tasks]],
@@ -257,9 +247,7 @@ def evaluate(
         marker = f"<extra_id_{i}>"
         token_id = tokenizer.convert_tokens_to_ids(marker)
         if token_id is None or token_id == tokenizer.unk_token_id:
-            # Stock mT5 (including Afri-mT5) stores these pieces with the
-            # SentencePiece word-boundary prefix. Use the pretrained rows;
-            # adding unprefixed special tokens would allocate different IDs.
+    # Resolve mT5's word-prefixed sentinels to existing pretrained rows.
             token_id = tokenizer.convert_tokens_to_ids("▁" + marker)
             prefixed_sentinels = True
         sentinels.append(token_id)
@@ -279,10 +267,8 @@ def evaluate(
     def encode_task(text: str) -> list[int]:
         if not prefixed_sentinels:
             return tokenizer(text, add_special_tokens=False)["input_ids"] + [eos]
-        # Character masks can start inside words. Stock mT5 only recognizes
-        # its sentinel spelling at a word boundary, so tokenize text spans
-        # separately and insert the resolved marker IDs directly. Do not add
-        # whitespace to the shared tasks or let markers become ordinary text.
+    # Insert sentinel IDs between tokenized spans: character masks may start
+    # inside words, where mT5 cannot recognize sentinel spellings directly.
         ids = []
         for part in re.split(r"(<extra_id_\d+>)", text):
             if not part:
@@ -338,8 +324,7 @@ def evaluate(
             )
             n_target = int(labels.ne(-100).sum())
             if document_scores:
-                # Recompute plain cross-entropy from logits. Auxiliary training
-                # penalties must never enter likelihood or bootstrap estimates.
+            # Exclude auxiliary penalties from likelihood and bootstrap scores.
                 token_losses = torch.nn.functional.cross_entropy(
                     output.logits.float().transpose(1, 2), labels, ignore_index=-100, reduction="none")
                 row_nats = token_losses.sum(dim=1).tolist()

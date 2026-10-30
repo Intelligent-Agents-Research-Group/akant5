@@ -1,16 +1,6 @@
-"""Build the corpus manifest that gates every training run.
+"""Record corpus counts, hashes, pinned revisions, licenses, and provenance.
 
-The manifest is the artifact the publication plan requires before pretraining:
-per-source row counts, character and token counts, content hashes, pinned
-revisions, licences, provenance flags and variety labels, plus the dedup and
-decontamination reports. A run card references its manifest hash, so any
-result can be traced to the exact corpus state that produced it.
-
-:func:`assert_release_safe` is the licence interlock. ``pristine-twi-english``
-is CC BY-NC 4.0, so a checkpoint trained on it cannot be released for
-commercial use; the manifest names which sources impose that, rather than
-leaving it to be discovered later.
-"""
+Bind run cards to the manifest hash; guard commercial release of NC-trained weights."""
 
 from __future__ import annotations
 
@@ -29,14 +19,8 @@ logger = get_logger(__name__)
 
 @dataclass
 class SourceStats:
-    """Measured properties of one source after normalization.
-
-    Parallel sources carry two character counts, because a single source can be
-    consumed two ways. ``pristine_twi_english`` supplies M1/M2's monolingual Twi
-    (``n_chars``, its Akan column alone) *and* M3's translation pairs
-    (``n_chars_pair``, both sides). Charging the pair total against a mixture
-    that only uses the Twi column would overstate its synthetic share.
-    """
+    """Record normalized source statistics: ``n_chars`` counts Akan alone;
+    ``n_chars_pair`` counts both sides of parallel records."""
 
     name: str
     n_docs: int = 0
@@ -80,15 +64,9 @@ def measure(
     streaming: bool = False,
     max_chars: int | None = None,
 ) -> SourceStats:
-    """Stream a source and record its size, hash and normalization behaviour.
+    """Measure normalized target-side counts, hashes, and rule changes.
 
-    The content hash is a running digest over normalized target-language text,
-    so two manifests agree only if that text is identical after normalization.
-    Hashing the Akan side alone is what makes the hash comparable between a
-    monolingual declaration and a parallel one over the same text — which is
-    how ``pristine-twi`` was shown to be redundant with
-    ``pristine-twi-english``.
-    """
+    Hash targets alone so monolingual and parallel declarations are comparable."""
     import hashlib
 
     from akanlm.audit.sources import Modality
@@ -258,26 +236,9 @@ def provenance_summary(
     stats: dict[str, SourceStats],
     mixture=None,
 ) -> dict:
-    """Human vs synthetic share of the training text, by characters.
+    """Return training character counts/shares by provenance.
 
-    The headline number for the data statement. With ``pristine-twi-english`` carrying
-    the volume and Twi Wikipedia the only human monolingual source, the
-    synthetic share of M1 is expected to be very high; that belongs in the
-    paper rather than being discovered by a reviewer.
-
-    Pass *mixture* to get the number that actually matters. Without it this
-    sums every ``role=train`` source at weight 1, which over-counts the English
-    replay buffer (absent from M1) and ignores the 4x Wikipedia oversampling.
-    With it, each source is weighted by its ``repeat`` factor and sources
-    outside the mixture are excluded.
-
-    Args:
-        sources: Declared corpora.
-        stats: Measured sizes, keyed by source name.
-        mixture: Optional :class:`~akanlm.data.mixture.MixtureConfig`.
-    Returns:
-        Character counts and shares by provenance.
-    """
+    With a mixture, weight included sources by repeats; otherwise count all training sources once."""
     by_name = {s.name: s for s in sources}
 
     # A mixture may list the same source twice under different consumption
@@ -328,12 +289,7 @@ def write(manifest: dict, path: Path) -> Path:
 
 
 def assert_release_safe(manifest: dict) -> None:
-    """Raise if the manifest permits a release the licences forbid.
-
-    Raises:
-        ValueError: If a non-commercial source is in the training mixture.
-            Catch this and downgrade the release, rather than suppressing it.
-    """
+    """Reject noncommercial training sources; restrict the release rather than suppressing the error."""
     blocking = manifest["licence_summary"]["blocks_commercial_release"]
     if blocking:
         raise ValueError(

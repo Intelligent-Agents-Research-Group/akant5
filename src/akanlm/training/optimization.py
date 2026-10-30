@@ -83,21 +83,16 @@ def validate_model_setup(model, tokenizer, config):
 
 
 def rsqrt_multiplier(step, plateau_steps):
-    """Plateau at the configured LR, then inverse-square-root decay.
+    """Use an LR plateau followed by inverse-square-root decay.
 
-    learning_rate=0.01 and plateau_steps=10000 reproduce Google's scalar
-    1/sqrt(max(step, 10000)).
-    """
+    LR=0.01 and plateau=10,000 give Google's ``1/sqrt(max(step, 10000))``."""
     return math.sqrt(plateau_steps / max(step, plateau_steps))
 
 
 def adafactor_class(min_dim_size_to_factor=128):
-    """Honor Mesh's minimum factored dimension for HF's matrix parameters.
+    """Factor matrices only when both dimensions meet Mesh's threshold (default 128).
 
-    HF otherwise factors even small relative-attention bias matrices. Mesh
-    defaults to an unfactored accumulator unless both dimensions are >=128.
-    A threshold of zero recovers HF's original behavior for controls.
-    """
+    A zero threshold restores HF's factoring rule."""
     from transformers import Adafactor
 
     class CPTAdafactor(Adafactor):

@@ -1,25 +1,7 @@
-"""T5-style span corruption data collator for denoising sequence-to-sequence training.
+"""T5 span corruption with identity-resolved sentinels.
 
-This module implements the T5-inspired span corruption objective for
-encoder-decoder denoising NLP training. The collator samples noise spans,
-replaces each dropped span with a unique sentinel token in the encoder
-input, and emits a decoder target sequence containing the removed spans in
-source order. The implementation follows the deterministic T5 corruption
-length relation and expects a tokenizer that reserves sentinel token ids at
-the top of the vocabulary.
-
-The primary public interface is :class:`DataCollatorForT5MLM`. It validates
-training configuration, derives the expected raw-token and target-token
-lengths, and returns padded PyTorch tensors for encoder and decoder inputs.
-Helper utilities such as :func:`compute_input_and_target_lengths` and
-:func:`random_spans_noise_mask` reproduce the span-layout behavior described
-by the original T5 span corruption objective.
-
-Example:
-    >>> collator = DataCollatorForT5MLM(tokenizer=tokenizer, input_length=512,
-    ...                                 target_length=114)
-    >>> batch = collator(examples)
-"""
+Inputs retain unmasked text; targets contain removed spans in source order.
+Derive exact raw/target lengths, then pad targets with ignored labels."""
 
 from __future__ import annotations
 
@@ -34,23 +16,7 @@ def compute_input_and_target_lengths(
     noise_density: float = 0.15,
     mean_noise_span_length: float = 3.0,
 ) -> tuple[int, int]:
-    """Return the raw-token and target-token lengths required for T5-style span corruption.
-
-    This helper ports the T5 ``random_spans_helper`` logic and solves for the
-    smallest raw token count whose corrupted form fits the requested encoder
-    length exactly. The goal is to avoid truncation or padding during packing
-    and to keep the encoder-decoder sequence shapes deterministic.
-
-    Args:
-        inputs_length: Desired post-corruption encoder length.
-        noise_density: Fraction of tokens assigned to corrupted spans.
-        mean_noise_span_length: Average corrupted span width.
-
-    Returns:
-        A tuple ``(tokens_length, targets_length)`` where ``tokens_length`` is
-        the raw token count required to pack the example and
-        ``targets_length`` is the resulting decoder target length.
-    """
+    """Return raw/target lengths yielding exactly ``inputs_length`` encoder tokens."""
 
     def _segment_lengths(tokens_length: int) -> tuple[int, int]:
         num_noise_tokens = int(round(tokens_length * noise_density))
@@ -83,23 +49,9 @@ def random_spans_noise_mask(
     mean_noise_span_length: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Create a T5-style boolean noise mask for span corruption.
+    """Return a boolean corruption mask; True marks noise.
 
-    This helper generates a binary mask that marks token positions selected
-    for corruption. It mirrors the T5 ``random_spans_noise_mask`` procedure by
-    sampling noise spans and non-noise spans, then interleaving them so that
-    the corrupted and preserved segments alternate in the sequence.
-
-    Args:
-        length: Original sequence length before masking.
-        noise_density: Fraction of tokens in the sequence to corrupt.
-        mean_noise_span_length: Target average length of each noise span.
-        rng: NumPy random generator used to sample span boundaries.
-
-    Returns:
-        A NumPy boolean mask of length ``length`` where ``True`` indicates a
-        corrupted token position.
-    """
+    Random noise/non-noise spans alternate under the supplied NumPy generator."""
     orig_length = length
     # Guarantee at least one noise span and one non-noise span.
     length = max(length, 2)
@@ -137,19 +89,9 @@ def random_spans_noise_mask(
 
 @dataclass
 class DataCollatorForT5MLM:
-    """Turn packed token sequences into span-corruption examples.
+    """Build sentinel-masked inputs and ordered removed-span targets from packed tokens.
 
-    Args:
-        tokenizer: Provides the sentinel ids and ``eos_token_id``.
-        noise_density: Fraction of tokens corrupted.
-        mean_noise_span_length: Average corrupted span width.
-        input_length: Post-corruption encoder length.
-        target_length: Post-corruption decoder length.
-        pad_token_id: Padding id.
-        decoder_start_token_id: T5 starts the decoder with ``<pad>``.
-        seed: Base seed; each call advances a private generator so runs are
-            reproducible and independent of global numpy state.
-    """
+    Keep fixed lengths and a private, advancing RNG."""
 
     tokenizer: Any
     noise_density: float = 0.15
@@ -200,18 +142,9 @@ class DataCollatorForT5MLM:
             raise ValueError("T5 requires a non-padding EOS token")
 
     def _mask_rng(self):
-        """Return a deterministic, worker-aware NumPy random generator.
+        """Seed each worker RNG from the collator and PyTorch worker seeds.
 
-        The collator samples corruption spans inside the dataloader worker
-        process. When `num_workers > 0`, PyTorch forks data workers and each
-        worker receives a distinct `worker_info.seed`. We derive the worker
-        generator from the configured collator seed plus that worker seed so
-        corruption masks remain reproducible while avoiding identical
-        span layouts across workers and epochs.
-
-        When `num_workers == 0`, there is no worker fork and the stored RNG
-        advances directly across batches.
-        """
+        Without workers, advance the stored generator directly."""
         import torch.utils.data
 
         info = torch.utils.data.get_worker_info()
@@ -252,12 +185,7 @@ class DataCollatorForT5MLM:
             ]
         )
 
-        # ``mask`` marks the NOISE positions. The encoder keeps everything else
-        # and shows one sentinel per removed span; the decoder target is the
-        # mirror image — the removed spans, each preceded by the sentinel that
-        # stands for it in the input. Passing ``mask`` here rather than ``~mask``
-        # inverts the objective into "see 15%, generate 85%" and truncates most
-        # of the target away, which is undetectable from shapes alone.
+        # Invert the mask for target sentinels: reconstruct noise, not retained text.
         inputs = self._filter_and_insert(input_ids, ~mask)
         targets = self._filter_and_insert(input_ids, mask)
 

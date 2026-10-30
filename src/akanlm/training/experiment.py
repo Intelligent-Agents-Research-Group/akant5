@@ -1,12 +1,6 @@
-"""Standard CPT experiment: document splits, two vocabularies, reference eval.
+"""Score fixed held-out data before/after CPT under matched budgets.
 
-Every system is scored on the same held-out mixture documents under two
-metrics. Google's token-span perplexity ranks systems only within one
-tokenizer. Character-span conditional BPC ranks systems across tokenizers,
-which is what AkanT5 against Google mT5 requires. The starting systems are
-scored before either arm trains (evaluation/pre_cpt.json); the final report
-reuses those rows after re-verifying weights, split and implementation.
-"""
+Token-span perplexity is within-tokenizer; character BPC supports cross-tokenizer comparisons."""
 
 import gc
 import json
@@ -88,12 +82,9 @@ def backbone(checkpoint):
 
 
 def original_initialization(model_id, destination, *, sentencepiece_model=None):
-    """Save Hub weights and their tokenizer, optionally restoring native byte fallback.
+    """Save pinned Hub weights/tokenizer; optionally restore native byte fallback.
 
-    Supply the pinned native SentencePiece model when a fast-tokenizer
-    conversion dropped its byte-fallback behavior. Existing copies are never
-    silently rewritten; use a new destination for a corrected initialization.
-    """
+    Never rewrite an existing initialization; use a new destination for corrections."""
     from transformers import AutoModelForSeq2SeqLM
 
     from akanlm.eval.denoising import tokenizer_fingerprint
@@ -125,9 +116,7 @@ def original_initialization(model_id, destination, *, sentencepiece_model=None):
 
         from akanlm.tokenizer.compat import restore_sentencepiece_byte_fallback
         restore_sentencepiece_byte_fallback(tokenizer, sentencepiece_model)
-        # T5Tokenizer in Transformers 5.16.1 rebuilds the backend with byte
-        # fallback disabled even when tokenizer.json enables it. The generic
-        # fast class preserves this verified backend when the copy is reloaded.
+        # The generic fast class preserves byte fallback across reloads in 5.16.1.
         tokenizer = PreTrainedTokenizerFast(
             tokenizer_object=tokenizer.backend_tokenizer,
             **tokenizer.special_tokens_map,
@@ -330,14 +319,10 @@ def run(config, output, *, corpora_dir=Path("configs/corpora"),
         mixtures_dir=Path("configs/mixtures"), manifest_sha256=None, resume=False,
         split_config=DEFAULT_SPLIT_CONFIG, initializer_root=Path("runs/init"), split_manifest=None,
         char_span_config=corpus_bpc.DEFAULT_CHAR_SPAN_CONFIG, pre_cpt_only=False):
-    """Score starting systems, then train both arms at equal update and encoder-token budgets.
+    """Score starting systems, then train both arms at matched update/encoder-token budgets.
 
-    Configs and split identity are frozen before either arm starts. Completed
-    arms are reused only when their config and split match; an interrupted arm
-    resumes solely on explicit --resume. Old single-arm runs are not upgraded.
-    ``pre_cpt_only`` scores the starting systems without freezing a training plan,
-    so the step budget can still change before training.
-    """
+    Reuse requires matching config/split; interruptions require ``--resume``.
+    ``pre_cpt_only`` leaves the step budget unfrozen. Single-arm runs are not upgraded."""
     from akanlm.data.mixture import MixtureConfig
 
     output = Path(output)

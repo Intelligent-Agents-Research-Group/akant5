@@ -1,12 +1,7 @@
-"""Train a Twi/English SentencePiece tokenizer aligned to the mT5 layout.
+"""Train an mT5-layout Twi/English SentencePiece tokenizer.
 
-This module builds a compact Akan/Twi vocabulary for mT5-style surgery and
-serialization. It preserves the mT5 token layout: special tokens, 256 byte
-fallback pieces, 100 sentinel pieces, and a vocabulary padded to 128.
-
-The training file also documents the Hugging Face tokenizer round-trip patch
-needed to restore byte fallback and sentinel-name behavior.
-"""
+Preserve special/byte pieces, descending sentinels, and 128-row model padding.
+The generic fast wrapper restores native byte fallback and whitespace behavior."""
 
 from __future__ import annotations
 
@@ -39,13 +34,7 @@ def pad_vocab_size(size: int, multiple: int = PAD_MULTIPLE) -> int:
 
 
 def minimum_vocab_size(required_chars: int, byte_fallback: bool = True) -> int:
-    """Smallest ``vocab_size`` SentencePiece will accept for this setup.
-
-    Required characters, byte-fallback pieces and special tokens all consume
-    slots before a single learned subword exists. SentencePiece's own error for
-    violating this is an ``INTERNAL`` assertion from ``trainer_interface.cc``,
-    which is not obviously actionable, so :func:`train` checks it up front.
-    """
+    """Count required characters, byte pieces, and special tokens before fitting."""
     return required_chars + (BYTE_FALLBACK_PIECES if byte_fallback else 0) + NUM_SPECIAL_TOKENS
 
 
@@ -134,13 +123,7 @@ class TokenizerConfig:
 
 
 def akan_required_chars(language_config: Path) -> list[str]:
-    """Characters SentencePiece must keep as individual pieces.
-
-    Drawn from ``all_special_characters`` in the language config plus the base
-    alphabet, digraph letters and the combining tone marks. Without this,
-    unigram training on a corpus where tone is unmarked would drop the
-    tone-marked forms that appear in the grammar book.
-    """
+    """Keep configured letters, digraph characters, and combining tone marks."""
     spec = json.loads(language_config.read_text(encoding="utf-8"))
     chars: list[str] = []
     seen: set[str] = set()
@@ -206,17 +189,9 @@ def train(
     corpora_dir: Path = Path("configs/corpora"),
     split_manifest: Path | None = None,
 ) -> Path:
-    """Train the SentencePiece model and save an HF ``T5TokenizerFast``.
+    """Fit SentencePiece and save its HF tokenizer; return the output directory.
 
-    Args:
-        config: Validated tokenizer config.
-        output_dir: Destination directory; created if absent.
-        sentence_iterator: Override the corpus stream, for tests.
-        corpora_dir: Where corpus declarations live.
-        split_manifest: Frozen CPT split; restrict fitting to protected train records.
-    Returns:
-        The output directory.
-    """
+    A split manifest restricts fitting to protected training records."""
     import sentencepiece as spm
     from akanlm.tokenizer.sampling import CharacterBudgetIterator, character_quotas
 
@@ -321,17 +296,9 @@ def train(
 
 
 def append_sentinels(spm_model: Path, count: int = NUM_SENTINELS) -> int:
-    """Append ``<extra_id_*>`` pieces to a SentencePiece model, descending.
+    """Append descending ``<extra_id_N>`` pieces in place; return the new piece count.
 
-    Pieces are added in the order ``<extra_id_{count-1}>`` … ``<extra_id_0>``
-    so that ``<extra_id_0>`` receives the highest id, matching T5 and mT5.
-
-    Args:
-        spm_model: Path to a ``.model`` file, rewritten in place.
-        count: Number of sentinels.
-    Returns:
-        The new piece count.
-    """
+    ``<extra_id_0>`` receives the highest ID."""
     from sentencepiece import sentencepiece_model_pb2 as sp_pb2
 
     proto = sp_pb2.ModelProto()
@@ -353,24 +320,10 @@ def append_sentinels(spm_model: Path, count: int = NUM_SENTINELS) -> int:
 
 
 def build_hf_tokenizer(spm_model: Path, model_max_length: int = 1024):
-    """Wrap a sentinel-bearing ``.model`` file as a ``PreTrainedTokenizerFast``.
+    """Wrap SentencePiece as a generic fast tokenizer preserving native behavior.
 
-    See the module docstring for why the backend is built through
-    ``T5Converter`` and then patched: the slow tokenizer misreports its own
-    length, and the converter drops byte fallback.
-
-    The converter also misreads the SentencePiece normalizer. transformers
-    5.16's ``T5Tokenizer`` reports ``add_prefix_space=False`` and does not keep
-    ``legacy=False``, so the Metaspace steps get ``prepend_scheme="never"``
-    and the first word of every text loses its ``▁`` (``A na dwo`` instead of
-    SentencePiece's ``▁Anadwo``). The converter additionally strips trailing
-    spaces and collapses space runs, which SentencePiece does only when
-    ``remove_extra_whitespaces`` is set. Both are restored from the model's
-    ``normalizer_spec``. The prefix is ``"first"`` rather than ``"always"``
-    so text following a sentinel inside one string is not given a word
-    boundary: character-masked evaluation spans can start mid-word.
-    :func:`assert_matches_sentencepiece` checks the result.
-    """
+    Restore byte fallback, sentinel names, and ``normalizer_spec`` whitespace rules.
+    Metaspace ``first`` avoids inserting word boundaries after sentinels."""
     from sentencepiece import sentencepiece_model_pb2 as sp_pb2
     from tokenizers import Tokenizer
     from transformers import PreTrainedTokenizerFast, T5Tokenizer
@@ -425,11 +378,8 @@ def build_hf_tokenizer(spm_model: Path, model_max_length: int = 1024):
     )
 
 
-#: Texts on which the HF tokenizer must reproduce SentencePiece exactly:
-#: Akan letters and tone marks, byte-fallback characters, digits, and the
-#: whitespace cases the converter got wrong. Text with leading whitespace is
-#: excluded: SentencePiece emits an extra ``▁`` there, and corpus
-#: normalization strips it before tokenization.
+#: Check letters, tones, bytes, digits, and whitespace against SentencePiece.
+#: Exclude leading whitespace, which corpus normalization strips.
 PARITY_TEXTS = (
     "Anadwo biara ɔfrɛ no.",
     "Ɔbaa no rekɔ adwuma. Ɛyɛ me dɛ paa.",
@@ -445,13 +395,7 @@ PARITY_TEXTS = (
 
 
 def assert_matches_sentencepiece(tokenizer, spm_model: Path, texts: Iterable[str] = PARITY_TEXTS) -> int:
-    """Raise unless *tokenizer* produces SentencePiece's pieces for every text.
-
-    Returns:
-        Number of texts checked.
-    Raises:
-        AssertionError: On the first text whose pieces differ.
-    """
+    """Require identical SentencePiece pieces on every input; return the input count."""
     import sentencepiece as spm
 
     processor = spm.SentencePieceProcessor(model_file=str(spm_model))
@@ -474,13 +418,7 @@ def load(tokenizer_dir: Path):
 
 
 def verify_layout(tokenizer) -> dict:
-    """Assert the mT5-compatible layout and return the observed values.
-
-    Raises:
-        AssertionError: If any layout invariant is violated. These invariants
-            are what let :mod:`akanlm.tokenizer.surgery` copy special-token
-            rows positionally from mT5.
-    """
+    """Validate special/byte/sentinel IDs for positional row transfer; return the layout."""
     size = len(tokenizer)
     observed = {
         "len": size,

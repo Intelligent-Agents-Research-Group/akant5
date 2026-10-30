@@ -57,20 +57,9 @@ def write_json(destination: str | Path, report):
 
 
 def run_label(checkpoints: Iterable[str | Path]) -> str:
-    """A filename-safe label naming the run(s) an evaluation covers.
+    """Build a filename-safe label from run names or Hub IDs.
 
-    Eval reports are written per CPT mixture, so a timestamp alone makes a
-    directory of reports unreadable: every mixture's numbers land in files
-    whose names are indistinguishable. This derives the run name from the
-    checkpoints themselves.
-
-    ``runs/cpt/akant5-small-m1x_en/final`` -> ``akant5-small-m1x_en``, since the leaf
-    of a training run is the same word for every run and names nothing.
-    A non-final leaf is kept, so an intermediate checkpoint stays distinct:
-    ``runs/cpt/akant5-small-m1x_en/checkpoint-20000`` ->
-    ``akant5-small-m1x_en-checkpoint-20000``. Hub ids keep both halves
-    (``google/mt5-base`` -> ``google-mt5-base``).
-    """
+    Drop generic leaves such as ``final``; retain checkpoint steps and Hub namespaces."""
     parts: list[str] = []
     for checkpoint in checkpoints:
         raw = str(checkpoint).rstrip("/")

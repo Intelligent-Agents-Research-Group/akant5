@@ -1,9 +1,4 @@
-"""Training-plan provenance, resume compatibility, and milestone checkpoints.
-
-A run records its configuration, data identity, initial weights and runtime
-versions; a resume must match them. Milestone checkpoints are hard-linked out
-of Trainer rotation for later evaluation.
-"""
+"""Training-plan identities, resume checks, and hard-linked milestones."""
 
 import json
 import os
@@ -38,16 +33,9 @@ def runtime_framework():
 
 
 def bind_training_plan(output_dir, config, dataset_key, validation, resume, framework=None):
-    """Write ``training_plan.json``, or check that a resume matches it.
+    """Bind config, data, initial weights, and framework identity to the run.
 
-    A resume must keep the configuration (except a larger ``max_steps``),
-    training data, initial weights and runtime framework. Without ``resume``
-    the output must hold no trained checkpoints.
-
-    Raises:
-        ValueError: The resume changes the run, or a fresh run would
-            overwrite trained checkpoints.
-    """
+    Resume permits a larger ``max_steps``; fresh runs reject existing checkpoints."""
     output_dir = Path(output_dir)
     path = output_dir / "training_plan.json"
     initial = Path(config.base_checkpoint)
@@ -82,13 +70,9 @@ def bind_training_plan(output_dir, config, dataset_key, validation, resume, fram
 
 
 def preserve_milestone(root, step):
-    """Hard-link ``checkpoint-<step>`` into ``milestones/`` unless already preserved.
+    """Hard-link a checkpoint into milestones, replacing partial copies.
 
-    A partial copy left by an interrupted earlier attempt is replaced.
-
-    Returns:
-        bool: Whether a new milestone copy was made.
-    """
+    Return whether a new copy was created."""
     root = Path(root)
     source = root / f"checkpoint-{step}"
     destination = root / "milestones" / source.name
@@ -106,14 +90,9 @@ def preserve_milestone(root, step):
 
 
 def restore_milestones(root, steps):
-    """Finish milestone copies interrupted after their checkpoint was saved.
+    """Finish milestone copies after incomplete checkpoints are quarantined.
 
-    Call only after incomplete checkpoints have been quarantined: every
-    remaining ``checkpoint-<step>`` is then complete.
-
-    Returns:
-        list[int]: Steps whose milestone copy was made now.
-    """
+    Return the newly preserved steps."""
     root = Path(root)
     return [step for step in steps
             if (root / f"checkpoint-{step}").is_dir() and preserve_milestone(root, step)]

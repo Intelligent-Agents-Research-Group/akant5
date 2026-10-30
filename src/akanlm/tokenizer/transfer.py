@@ -1,49 +1,9 @@
-"""Initialize new embedding rows from mT5's pretrained ones.
+"""Initialize vocabulary rows from pretrained mT5 matrices.
 
-Replacing mT5's 250k vocabulary with a ~32k Twi/English one throws away the
-input embedding matrix and the untied output head — between 42% and 85% of the
-checkpoint's parameters depending on size. Reinitializing them randomly would
-discard pretrained knowledge the encoder body still expects, so each new row is
-derived from the old matrix:
-
-``overlap``
-    The new piece string exists verbatim in mT5's vocabulary. Copy its row.
-    This covers the special tokens, all 256 byte-fallback pieces, most English
-    subwords and the Akan pieces mT5 happened to have (it has ``ɔ`` and ``ɛ``
-    as isolated characters, just not as parts of Twi words).
-
-``subword_mean``
-    The new piece is new. Tokenize its surface form with mT5's tokenizer and
-    average the resulting rows. A new Twi piece like ``▁ɔfrɛ`` becomes the mean
-    of mT5's ``▁``, ``ɔ``, ``fr``, ``ɛ``. This is an initialization heuristic,
-    not an equivalent contextual representation or sequence probability.
-
-``sentinel_alias``
-    Match ``<extra_id_N>`` and ``▁<extra_id_N>`` by identity and copy the
-    pretrained row exactly, without rescaling either the input or output row.
-
-``fallback``
-    Neither worked. Use the mean of all pretrained rows. Expected to be rare;
-    the count is reported so a large number is visible.
-
-Rows past the tokenizer (vocabulary padding) also get the pretrained mean.
-Neither these rows nor fallback rows may be zero or random: mT5's output head
-gives almost every token a large negative logit (mean about -23 on Twi text
-for mt5-small), so a zero row scores 0 and a random row scores around 0 and
-both outrank every real token. The first AkanT5 surgery used Gaussian
-fallback rows and zero padding rows. Its 8 Gaussian ``lm_head`` rows took all
-probability mass, and its span-corruption loss was 27.7 nats against
-ln(32128) = 10.4 for a uniform prediction.
-
-With ``rescale_derived``, ``subword_mean`` rows are rescaled to the mean L2
-norm of the copied rows, since averaging shrinks vectors toward the origin.
-Surgery enables this only for ``lm_head``. On 64 x 512-token span-corruption
-batches for mt5-small, disabling it for the input embeddings lowered initial
-loss on Twi Wikipedia, Pristine Twi and Pristine English by 0.34-0.57 nats,
-while disabling it for ``lm_head`` raised Twi loss. Scaling an output row
-scales its logit, and with mostly negative logits a longer row lowers a new
-token's probability rather than raising it.
-"""
+Copy matching pieces/sentinels; otherwise average mT5 subwords or all rows.
+Padding also uses pretrained means; zero/random output rows can dominate logits.
+Rescale only derived LM-head rows to copied-row mean L2 norm; inputs stay unscaled.
+Subword averaging is an initialization heuristic, not contextual/probability equivalence."""
 
 from __future__ import annotations
 
@@ -95,12 +55,7 @@ class TransferReport:
 
 
 def _piece_to_text(piece: str) -> str:
-    """Surface form of a SentencePiece piece, for re-tokenization.
-
-    ``▁ɔfrɛ`` denotes a word-initial ``ɔfrɛ``, so it becomes ``" ɔfrɛ"`` —
-    keeping the leading space matters, since mT5 tokenizes word-initial and
-    word-internal occurrences differently.
-    """
+    """Decode a SentencePiece surface form, preserving word-initial leading space."""
     return piece.replace(WORD_BOUNDARY, " ")
 
 
@@ -112,21 +67,10 @@ def build_matrix(
     matrix_name: str,
     rescale_derived: bool = True,
 ) -> tuple["torch.Tensor", TransferReport]:
-    """Derive a ``target_rows x d`` matrix from *old_matrix*.
+    """Return ``(matrix, report)`` with source dtype/device and ``target_rows × d`` shape.
 
-    Args:
-        old_matrix: mT5's ``V_old x d`` embedding or ``lm_head`` weight.
-        old_tokenizer: mT5's tokenizer.
-        new_tokenizer: The AkanT5 tokenizer.
-        target_rows: Padded model vocab size; rows beyond the tokenizer's
-            length get the mean pretrained row (see the module docstring).
-        matrix_name: Label for the report.
-        rescale_derived: Rescale ``subword_mean`` rows to the copied rows'
-            mean norm.
-    Returns:
-        ``(new_matrix, report)``. ``new_matrix`` matches *old_matrix* in dtype
-        and device.
-    """
+    Copy/average rows, fill padding with pretrained means, and optionally rescale
+    subword means to copied-row mean L2 norm."""
     import torch
 
     old_vocab = old_tokenizer.get_vocab()

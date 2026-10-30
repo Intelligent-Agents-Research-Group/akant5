@@ -1,7 +1,7 @@
 """Frozen English character-span evaluation of raw CPT checkpoints.
 
-Failure conditions are deliberate: changed texts, masks, scorer code, or weights
-invalidate cached rows; mismatched tasks and token overflow abort comparisons.
+Text, mask, scorer, or weight changes invalidate caches; task mismatch and
+token overflow abort comparisons.
 """
 
 from __future__ import annotations
