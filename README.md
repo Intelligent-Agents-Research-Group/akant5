@@ -31,13 +31,13 @@ because most of the CPT training corpora are licensed for non-commercial use (se
 Python 3.11 or later is required. With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv sync --extra dev        # installs PyTorch built for CUDA 12.8 on Linux
+uv sync                    # installs PyTorch built for CUDA 12.8 on Linux
 ```
 
 or with pip, after installing a PyTorch build for your platform:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 The command-line interface is `akanlm` (equivalently `python -m akanlm.cli`); `akanlm --help` lists
@@ -63,7 +63,6 @@ configs/
   tokenizer/  32k, 48k and 64k replacement candidates; 64k candidates for extension
   models/     mT5-small/base/large, replacement and extension
   accel/      per-GPU batch layouts for 1, 2 and 4 GPUs
-tests/e2e/    end-to-end tests with tiny models; run offline on CPU
 ```
 
 ## Pipeline
@@ -252,17 +251,6 @@ for name, split in (("train", "train"), ("dev", "validation"), ("test", "test"))
 data these are `abeb1ebc89ebd85dd1b4abb3ab9bd491ecd67f26acfd23a07d969117fdac4d89` (MAFAND-MT test),
 `1582fba7ac2701c3501b26cdbcd6c1d9dea4c02373be45cf6783ea45909d8e3f` (FLORES+ Akuapem devtest) and
 `60ca8c658183b775dcfbda780ee93d4f834f8fd57ccf6502c13df0b52aa966c9` (FLORES+ Asante devtest).
-
-## Tests
-
-```bash
-pytest
-```
-
-The end-to-end tests train and evaluate tiny models offline on CPU, including a two-process
-distributed CPT run. GitHub Actions installs the exact dependencies in `uv.lock` and forces CPU
-execution; on Linux the locked PyTorch distribution includes CUDA libraries, but no GPU is used.
-Each CI run uploads its JUnit report and the tiny-model test artifacts.
 
 ## Citation
 

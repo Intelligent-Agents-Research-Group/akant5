@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "black", "ruff"]
+dev = ["black", "ruff"]
 
 [project.scripts]
 akanlm = "akanlm.cli:app"
@@ -40,11 +40,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests/e2e"]
-pythonpath = ["src"]
-addopts = "-q"
 
 [tool.uv]
 required-environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
