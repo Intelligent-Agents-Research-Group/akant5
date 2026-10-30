@@ -5,7 +5,7 @@ title: "AkanT5: Adapting mT5 to Akan by Vocabulary Replacement or Extension and 
 version: 0.1.0
 license: Apache-2.0
 repository-code: "https://github.com/Intelligent-Agents-Research-Group/akant5"
-url: "https://huggingface.co/IARG-UF"
+url: "https://huggingface.co/collections/IARG-UF/akant5-cpt-checkpoints-and-vocabulary-initializations"
 keywords:
   - Akan
   - Twi

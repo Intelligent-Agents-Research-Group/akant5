@@ -13,7 +13,7 @@ English replay. The repository also contains the evaluation used in the accompan
 
 The adapted checkpoints and their vocabulary initializations are available on Hugging Face under
 [IARG-UF](https://huggingface.co/IARG-UF), grouped in the
-[AkanT5 collection](https://huggingface.co/collections/IARG-UF/akant5-cpt-checkpoints-and-vocabulary-initializations-6ae431013a59a1b4fc74ae4a).
+[AkanT5 collection](https://huggingface.co/collections/IARG-UF/akant5-cpt-checkpoints-and-vocabulary-initializations).
 The collection contains six CPT checkpoints and six vocabulary initializations:
 
 ```text
